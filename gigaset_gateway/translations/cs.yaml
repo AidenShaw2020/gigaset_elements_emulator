@@ -1,0 +1,84 @@
+configuration:
+  gateway_address:
+    name: Adresa brány
+    description: >-
+      Obvykle nechte prázdné - brána si vezme adresu, na kterou se základna
+      skutečně dovolala. Vyplňte jen tehdy, když má základna pro řídící kanál
+      použít jinou adresu.
+  base_id:
+    name: Klíč základny
+    description: >-
+      Obvykle nechte prázdné - základna se v Home Assistantu jmenuje podle své
+      adresy, takže všechny brány skončí u stejného zařízení. Vyplňte jen
+      tehdy, když se ke každé bráně základna hlásí z jiné adresy.
+  port:
+    name: Port cloudového API
+    description: >-
+      Port, na kterém základnu obsluhujeme přes TLS. Základna se vždy připojuje
+      na 443, takže pokud tu nenastavíte 443, přesměrujte port na routeru.
+  control_poll_port:
+    name: Řídicí port
+    description: >-
+      Prostý HTTP port, ze kterého si základna tahá čekající příkazy. Nemůže
+      být přes TLS - wget na základně ho neumí.
+  control_poll_interval:
+    name: Perioda dotazů
+    description: >-
+      Sekundy mezi dotazy. Je to zároveň nejhorší možná prodleva mezi stiskem
+      tlačítka v Home Assistantu a reakcí základny.
+  certificate_hostnames:
+    name: Jména v certifikátu
+    description: >-
+      DNS jména zapsaná do self-signed certifikátu. Základna řetěz neověřuje,
+      ale jméno tam být musí.
+  certificate_addresses:
+    name: Adresy v certifikátu
+    description: >-
+      Další IP adresy do certifikátu. Pro IP adresu žádný wildcard neexistuje,
+      takže vypište každou adresu, na které může brána běžet.
+  mqtt_host:
+    name: MQTT server
+    description: >-
+      Nechte prázdné, pokud chcete použít broker nastavený v Home Assistantu.
+  mqtt_port:
+    name: MQTT port
+    description: Potřeba jen u externího brokeru.
+  mqtt_username:
+    name: MQTT uživatel
+    description: Potřeba jen u externího brokeru.
+  mqtt_password:
+    name: MQTT heslo
+    description: Potřeba jen u externího brokeru.
+  mqtt_base_topic:
+    name: Kořen MQTT témat
+    description: Předpona všech témat, která brána publikuje.
+  mqtt_discovery_prefix:
+    name: Předpona discovery
+    description: Musí odpovídat nastavení MQTT integrace v Home Assistantu.
+  motion_off_delay:
+    name: Doba doběhu detektoru pohybu
+    description: >-
+      Jak dlouho zůstane detektor pohybu sepnutý. Uzel hlásí jen začátek
+      pohybu, konec nehlásí nikdy.
+  battery_empty_mv:
+    name: Napětí vybité baterie
+    description: Milivolty, které se hlásí jako 0 %.
+  battery_full_mv:
+    name: Napětí plné baterie
+    description: Milivolty, které se hlásí jako 100 %.
+  timezone:
+    name: Pravidlo časové zóny
+    description: Řetězec POSIX časové zóny, který se pošle základně.
+  timezone_name:
+    name: Název časové zóny
+    description: Název zóny podle IANA, který se pošle základně.
+  firmware_cre_dir:
+    name: Adresář s Lua z firmwaru
+    description: >-
+      Záložní adresář se soubory pravidlového enginu z vlastní základny. Běžně
+      může zůstat prázdný; použije se, jen když základna o svoji kopii přijde,
+      třeba po továrním resetu.
+  log_requests:
+    name: Logovat hlavičky požadavků
+    description: Podrobné logování, jen pro ladění.
+

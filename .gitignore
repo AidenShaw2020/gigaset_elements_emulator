@@ -1,0 +1,6 @@
+__pycache__/
+*.pem
+gigaset_gateway.json
+gigaset_events.jsonl
+gigaset_state.json
+gigaset_command_state.json

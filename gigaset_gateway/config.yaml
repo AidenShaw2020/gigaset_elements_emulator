@@ -1,0 +1,65 @@
+name: Gigaset elements local gateway
+version: "1.0.6"
+slug: gigaset_gateway
+description: >-
+  Local replacement for the Gigaset elements cloud. Keeps the original base
+  station firmware and exposes every sensor over MQTT discovery.
+url: https://github.com/AidenShaw2020/gigaset_elements_emulator
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+# Zakladna musi branu videt na svem portu a sama si chodi pro prikazy, takze NAT
+# kontejnerove site by prekazel.  Porty se proto nemapuji - naslouchani ridi
+# primo volby nize.
+host_network: true
+map:
+  - share:rw
+services:
+  - mqtt:want
+options:
+  base_id: ""
+  port: 8443
+  control_poll_port: 8080
+  control_poll_interval: 5
+  certificate_hostnames:
+    - api-bs.gigaset-elements.de
+    - "*.gigaset-elements.de"
+  certificate_addresses: []
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_base_topic: gigaset
+  mqtt_discovery_prefix: homeassistant
+  motion_off_delay: 60
+  battery_empty_mv: 2200
+  battery_full_mv: 3100
+  timezone: CET-1CEST,M3.5.0,M10.5.0/3
+  timezone_name: Europe/Prague
+  firmware_cre_dir: /share/gigaset/cre
+  log_requests: false
+schema:
+  gateway_address: str?
+  base_id: str?
+  port: port
+  control_poll_port: port
+  control_poll_interval: int(2,60)
+  certificate_hostnames:
+    - str
+  certificate_addresses:
+    - str
+  mqtt_host: str?
+  mqtt_port: port?
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_base_topic: str
+  mqtt_discovery_prefix: str
+  motion_off_delay: int(0,3600)
+  battery_empty_mv: int(1000,4000)
+  battery_full_mv: int(1000,4000)
+  timezone: str
+  timezone_name: str
+  firmware_cre_dir: str
+  log_requests: bool

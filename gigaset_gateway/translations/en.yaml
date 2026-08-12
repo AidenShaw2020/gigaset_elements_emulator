@@ -1,0 +1,83 @@
+configuration:
+  gateway_address:
+    name: Gateway address
+    description: >-
+      Usually leave empty - the gateway takes the address the base station
+      actually reached it on. Set it only if the base has to use a different
+      address for the control channel.
+  base_id:
+    name: Base station key
+    description: >-
+      Usually leave empty - the base is named after its address, so every
+      gateway ends up on the same device. Set it only when the base reaches
+      each gateway from a different address.
+  port:
+    name: Cloud API port
+    description: >-
+      TLS port the base station connects to. The base always dials port 443, so
+      unless you set 443 here, redirect the port on your router.
+  control_poll_port:
+    name: Control port
+    description: >-
+      Plain HTTP port the base polls for pending commands. It cannot use TLS -
+      the wget on the base does not support it.
+  control_poll_interval:
+    name: Control poll interval
+    description: >-
+      Seconds between polls. This is also the worst case delay between pressing
+      a button in Home Assistant and the base acting on it.
+  certificate_hostnames:
+    name: Certificate hostnames
+    description: >-
+      DNS names written into the self-signed certificate. The base does not
+      validate the chain, but the name has to be present.
+  certificate_addresses:
+    name: Certificate addresses
+    description: >-
+      Extra IP addresses for the certificate. X.509 has no wildcard for
+      addresses, so list every address the gateway may use.
+  mqtt_host:
+    name: MQTT host
+    description: >-
+      Leave empty to use the MQTT broker configured in Home Assistant.
+  mqtt_port:
+    name: MQTT port
+    description: Only needed for an external broker.
+  mqtt_username:
+    name: MQTT username
+    description: Only needed for an external broker.
+  mqtt_password:
+    name: MQTT password
+    description: Only needed for an external broker.
+  mqtt_base_topic:
+    name: MQTT base topic
+    description: Prefix for all topics published by the gateway.
+  mqtt_discovery_prefix:
+    name: MQTT discovery prefix
+    description: Must match the discovery prefix of the Home Assistant MQTT integration.
+  motion_off_delay:
+    name: Motion off delay
+    description: >-
+      How long a motion sensor stays on after movement. The node itself reports
+      only the start of movement, never the end.
+  battery_empty_mv:
+    name: Battery empty voltage
+    description: Millivolts reported as 0 %.
+  battery_full_mv:
+    name: Battery full voltage
+    description: Millivolts reported as 100 %.
+  timezone:
+    name: Time zone rule
+    description: POSIX time zone string pushed to the base station.
+  timezone_name:
+    name: Time zone name
+    description: IANA time zone name pushed to the base station.
+  firmware_cre_dir:
+    name: Firmware Lua directory
+    description: >-
+      Fallback directory for the rule engine files of your own base station.
+      Normally it can stay empty; it is only used if the base loses its own
+      copy, for example after a factory reset.
+  log_requests:
+    name: Log request headers
+    description: Verbose logging for debugging only.

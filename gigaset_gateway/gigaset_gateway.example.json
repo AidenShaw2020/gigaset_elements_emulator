@@ -1,0 +1,57 @@
+{
+  "bind_ip": "0.0.0.0",
+  "port": 8443,
+
+  "dns_server": false,
+  "ntp_server": false,
+  "log_headers": false,
+
+  "event_stream_seconds": 1,
+  "event_keepalive_seconds": 2,
+  "cloud_heartbeat_tick": 60,
+  "socket_timeout_seconds": 10,
+
+  "certificate": "lab.cert.pem",
+  "private_key": "lab.key.pem",
+
+  "event_log": "gigaset_events.jsonl",
+  "state_file": "gigaset_state.json",
+  "command_state_file": "gigaset_command_state.json",
+  "command_queue_file": "gigaset_commands.json",
+  "diagnostic_dir": "diagnostic",
+  "event_commands": [],
+
+  "raw_dns": { "enabled": false },
+
+  "base_configuration_file": "base_configuration.json",
+  "cre_manifest_file": "cre_manifest.json",
+  "cre_source_dirs": [
+    "cre_custom",
+    "cre_firmware"
+  ],
+
+  "control": {
+    "enabled": true,
+    "request_file": "gigaset_control.json",
+    "library_dir": "cre_custom",
+    "library": "gwctl",
+    "serial": 1,
+    "poll_url": "http://GATEWAY_IP:8080/gwctl",
+    "poll_port": 8080,
+    "poll_interval": 5
+  },
+
+  "mqtt": {
+    "enabled": true,
+    "host": "BROKER_IP",
+    "port": 1883,
+    "username": "gigaset",
+    "password": "CHANGE_ME",
+    "client_id": "gigaset-elements-gateway",
+    "base_topic": "gigaset",
+    "discovery_prefix": "homeassistant",
+    "motion_off_delay": 60,
+    "battery_empty_mv": 2200,
+    "battery_full_mv": 3100
+  }
+}
