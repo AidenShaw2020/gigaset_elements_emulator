@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.7
+
+- Replace the bundled `cloudLog` library with `gwquiet`. The rule engine's
+  `debug` and `info` messages are now silenced by swapping those two entries of
+  the stock `cloudLog` table once the engine has started, so the stock library
+  itself stays in place and is never downloaded or shipped. `warn` and `error`
+  keep working, including their source location.
+
 ## 1.0.6
 
 - Fix the control channel, which never worked in the add-on: with
