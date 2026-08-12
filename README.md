@@ -1,3 +1,5 @@
+![Gigaset Elements Community Emulator](gigaset_gateway/logo.png)
+
 # Local gateway for Gigaset elements
 
 A self-hosted replacement for the Gigaset elements cloud. The base station keeps
