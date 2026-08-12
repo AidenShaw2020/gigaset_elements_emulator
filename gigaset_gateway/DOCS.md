@@ -7,6 +7,11 @@ its original firmware and simply talks to this add-on instead of
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
 (door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes.
 
+> **Independent, unofficial project.** Not affiliated with, endorsed by or
+> supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
+> identify the hardware this add-on is compatible with. Use it only on base
+> stations and sensors you own or are authorised to administer.
+
 ## Before you start
 
 ### Lua files from your own base station (usually not needed)

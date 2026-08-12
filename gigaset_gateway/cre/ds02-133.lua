@@ -1,6 +1,6 @@
--- Rozsiruje stock knihovnu ds02-128 (ta umi jen buzzer_off) o obsluhu
--- kalibrace.  Jine CRE pravidla volaji ds02.buzzer_off, takze ta funkce musi
--- zustat zachovana.  Chovani je shodne s ws02-13.lua, viz komentar tam.
+-- Nezavisla implementace CRE rozhrani ds02.  Krome obsluhy kalibrace poskytuje
+-- i vstupni bod ds02.buzzer_off, protoze ho volaji jina CRE pravidla a bez nej
+-- by se nenacetla.  Chovani je shodne s ws02-13.lua, viz komentar tam.
 
 local ds02 = {}
 

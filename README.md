@@ -10,6 +10,11 @@ Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
 with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
 (button) and `is01` (siren).
 
+> **Independent, unofficial project.** Not affiliated with, endorsed by or
+> supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
+> identify the hardware this gateway is compatible with. Use it only on base
+> stations and sensors you own or are authorised to administer.
+
 ## What works
 
 - The base accepts a self-signed certificate; it does not pin or validate the
@@ -323,6 +328,18 @@ delay down to 0 to 3 seconds. `warn` and `error` are left untouched.
 - Multi-base support
 - Pattern editor instead of a fixed list
 - Optional recording of the base station's own diagnostic log uploads
+
+## How this was built
+
+Everything here was written from scratch. The protocol was worked out by
+observing a base station and sensors owned by the author: network captures of
+the traffic to the original cloud, the base station's own diagnostic log
+uploads, and analysis of firmware and of the vendor's Android application,
+both obtained through legitimate channels. Only what was needed to keep the
+hardware working without the cloud was reproduced.
+
+No vendor source code is contained in this repository, and none is needed to
+run the gateway.
 
 ## License
 
