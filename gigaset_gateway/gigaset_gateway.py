@@ -342,6 +342,7 @@ local POLL = "/tmp/gwctl.poll"
 local OUT = "/tmp/gwctl.out"
 local ULE = "/tmp/gwctl.ule.json"
 local SEND = "/tmp/gwctl.send.sh"
+local STAT = "/tmp/gwctl.stat"
 local ARM = "/tmp/gwarm."
 local POLL_TIMER = "gwctl_poll"
 local PAIR_TIMER = "gwctl_pairoff"
@@ -387,25 +388,54 @@ local function send_state()
         return
     end
     -- Dlouhy retezec, aby se nemuselo escapovat nic z toho, co potrebuje shell.
+    -- Prenos zkousi nejdriv wget, ktery na zakladne prokazatelne funguje;
+    -- busybox ho ale nemusi mit prelozeny s --post-data, proto zaloha pres nc.
+    -- Vysledek se zapise do souboru a odejde s pristim dotazem na branu - v
+    -- zavadecim rezimu je to jedina cesta, jak dat o sobe vedet.
     script:write([==[
+: > /tmp/gwctl.stat
 post() {
+  if wget -q -O /dev/null --post-data "$(cat "$2")" "http://__HOST__:__PORT__$1"
+  then
+    echo "$1=wget" >> /tmp/gwctl.stat
+    return 0
+  fi
   SIZE=$(wc -c < "$2")
   {
     printf 'POST %s HTTP/1.0\r\n' "$1"
     printf 'Content-Length: %s\r\n\r\n' "$SIZE"
     cat "$2"
-  } | nc __HOST__ __PORT__
+  } | nc __HOST__ __PORT__ && echo "$1=nc" >> /tmp/gwctl.stat \
+    || echo "$1=nic" >> /tmp/gwctl.stat
 }
 for d in endnode_libraries rules internal_rules; do
   for f in /mnt/data/cre/$d/*.lua; do
     [ -e "$f" ] && echo "$d/${f##*/}"
   done
 done > /tmp/gwctl.list
+echo "souboru=$(wc -l < /tmp/gwctl.list)" >> /tmp/gwctl.stat
 post /inventory /tmp/gwctl.list
 [ -f /cfg/cre ] && post /manifest /cfg/cre
 ]==])
     script:close()
     shell("stav", "/bin/sh " .. SEND)
+end
+
+-- Vysledek posledniho pokusu o odeslani.  Pripoji se k dotazu na branu, protoze
+-- dokud neni nactena knihovna cloudLog, jinou zpetnou vazbu nemame.
+local function status()
+    local handle = io.open(STAT, "r")
+    if handle == nil then
+        return ""
+    end
+    local text = (handle:read("*a") or ""):gsub("%s+", ",")
+    handle:close()
+    os.remove(STAT)
+    text = text:gsub("[^A-Za-z0-9=,._/-]", "")
+    if text == "" then
+        return ""
+    end
+    return "?s=" .. text
 end
 
 -- Prikaz pro UleApp na JBus tematu ulecontrol.  "sender" umi vzit payload ze
@@ -494,7 +524,7 @@ local function poll()
     os.remove(POLL)
     os.execute(
         "( timeout -t __POLL_HARD__ /usr/bin/wget -q -T __POLL_TIMEOUT__ -O "
-            .. POLL .. " " .. URL .. " ) > /dev/null 2>&1"
+            .. POLL .. " " .. URL .. status() .. " ) > /dev/null 2>&1"
     )
     local handle = io.open(POLL, "r")
     if handle == nil then
@@ -2672,6 +2702,9 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
             status = b"403 Forbidden"
             print(f"CONTROL POLL odmítnut {peer}", flush=True)
         else:
+            _, _, query = parts[1].partition("?")
+            if query.startswith("s="):
+                print(f"CONTROL STAV {peer} {query[2:]}", flush=True)
             body = gateway.take_control_poll_lines().encode("ascii", "replace")
             status = b"200 OK"
             gateway.note_control_poll(peer)

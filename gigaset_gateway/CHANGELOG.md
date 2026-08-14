@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.27
+
+- Send the base station's rule engine inventory with `wget`, which is known to
+  work on it, and keep `nc` only as a fallback. The result of the attempt now
+  travels back on the next poll, so it is visible even while the base is being
+  bootstrapped and the logging module is not loaded yet.
+
 ## 1.0.26
 
 - Stop the control library from depending on the rule engine's logging module.
