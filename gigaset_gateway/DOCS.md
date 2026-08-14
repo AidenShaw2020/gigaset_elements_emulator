@@ -5,7 +5,8 @@ its original firmware and simply talks to this add-on instead of
 `api-bs.gigaset-elements.de`.
 
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
-(door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes.
+(door), `um01` (universal window/door sensor), `ps02` (motion), `bn01` (button)
+and `is01` (siren) nodes.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -35,8 +36,8 @@ that case extract them from your own device and copy them to the directory in
     <internal rules>.lua
 ```
 
-The add-on ships its own `gwctl`, `gwquiet`, `ws02` and `ds02` libraries, which
-take precedence over the stock ones.
+The add-on ships its own `gwctl`, `gwquiet`, `ws02`, `ds02` and `um01`
+libraries, which take precedence over the stock ones.
 
 ### Router
 
@@ -81,6 +82,7 @@ directory, so the base does not have to re-request a signature after a restart.
 Every paired node appears through MQTT discovery, grouped under the base:
 
 - window / door: contact, tilt, position, calibration state, battery
+- universal sensor: contact, position, calibration state, temperature, battery
 - motion: motion sensor with a configurable off delay
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
@@ -114,6 +116,16 @@ To force a recalibration:
 3. Wake the sensor with its button.
 4. The sensor starts asking for calibration and the bundled library answers
    automatically; the current position becomes *closed*.
+
+The universal sensor `um01` stores two positions and is never calibrated
+automatically, because each step records the position it is physically in:
+
+1. Mount the sensor and close the window or door.
+2. Press *Kalibrace 1 - zavreno*.
+3. Open the window or door fully.
+4. Press *Kalibrace 2 - otevreno*.
+
+The *Calibration* entity shows which step the sensor is waiting for.
 
 ## Troubleshooting
 

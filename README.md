@@ -1,5 +1,3 @@
-![Gigaset Elements Community Emulator](gigaset_gateway/logo.png)
-
 # Local gateway for Gigaset elements
 
 A self-hosted replacement for the Gigaset elements cloud. The base station keeps
@@ -9,8 +7,8 @@ its original firmware and simply talks to this gateway instead of
 Runs either as a **Home Assistant add-on** or as a plain Python script.
 
 Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
-with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
-(button) and `is01` (siren).
+with sensor types `ws02` (window), `ds02` (door), `um01` (universal window/door
+sensor), `ps02` (motion), `bn01` (button) and `is01` (siren).
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -65,6 +63,7 @@ Shipped here are only the four libraries written for this project:
 | `gwctl` | control channel; generated at runtime |
 | `gwquiet` | silences `debug` and `info` logging, see [Throughput](#throughput) |
 | `ws02`, `ds02` | automatic answer to a sensor's calibration request |
+| `um01` | delivery of the two calibration steps of the universal sensor |
 
 ## How it works
 
@@ -193,6 +192,7 @@ base station.
 | node | entities |
 |---|---|
 | `ws02`, `ds02` | contact, tilt, position, calibration state, battery, calibrate / reset calibration buttons |
+| `um01` | contact, position, calibration state, temperature, battery, two calibration step buttons and a reset calibration button |
 | `ps02` | motion with a configurable off delay, battery |
 | `bn01` | device triggers and an `event` entity, battery |
 | `is01` | siren on/off, sound pattern selector |
@@ -220,6 +220,7 @@ can also be appended to the file named by `control.request_file`:
 | `reglist` | log the registered nodes |
 | `unpair` | remove a node |
 | `calibrate` / `cal_reset` | send `cal` / `recal` to a node |
+| `calibrate_step1` / `calibrate_step2` | send `cal1` / `cal2` to a `um01` node |
 | `siren_on` / `siren_off` | sound the siren |
 | `pattern_*` | play a sound pattern |
 | `mode_home`, `mode_away`, `mode_night`, `mode_custom` | switch the alarm mode |
@@ -274,9 +275,33 @@ Because ULE nodes sleep most of the time, the gateway writes a marker file
 command again the moment the node reports anything, which is the only reliable
 point at which it is awake.
 
-`moving`, `closed`, `cal1` and `cal2` appear in the original Android app but
-they are **cloud API state names, not ULE commands** - the sensor does not react
+`moving` and `closed` appear in the original Android app but they are **cloud
+API state names, not ULE commands** - a `ws02` or `ds02` sensor does not react
 to them.
+
+## Calibration of the universal sensor
+
+`um01` is an angle sensor that can be mounted on a window or on a door, and it
+stores two reference positions instead of one:
+
+| payload | meaning |
+|---|---|
+| `cal1req` | waiting for the *closed* position to be stored |
+| `cal1done` | first step accepted |
+| `cal2req` | waiting for the *open* position to be stored |
+| `cal2done` | calibration finished |
+
+Nothing is answered automatically here - each step records the position the
+sensor is physically in, so the user has to move it in between:
+
+1. Mount the sensor and close the window or door.
+2. Press *Kalibrace 1 - zavreno* (`calibrate_step1`).
+3. Open the window or door fully.
+4. Press *Kalibrace 2 - otevreno* (`calibrate_step2`).
+
+The commands are armed the same way as for `ws02`, so they are delivered with
+the sensor's next request, usually within a second or two. Until both steps are
+done the *Calibration* entity shows which one the sensor is waiting for.
 
 ## Siren
 
