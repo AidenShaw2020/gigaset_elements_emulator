@@ -1598,6 +1598,7 @@ class Gateway:
         self.mqtt = MqttBridge(config.get("mqtt", {}), self.request_control_action)
         self._ensure_control_library()
         self._ensure_manifest_reload()
+        self._check_cre_sources()
 
     def _ensure_control_library(self) -> None:
         """Nahrat na zakladnu aktualni verzi gwctl, kdyz se lisi od te nasazene.
@@ -1637,6 +1638,35 @@ class Gateway:
                 "message": {"type": "configuration-changed"},
             }
         )
+
+    def _check_cre_sources(self) -> None:
+        """Ohlasit polozky manifestu, ktere brana neumi obslouzit.
+
+        Na chybejici soubor zakladna reaguje tim, ze si konfiguraci stahuje
+        porad dokola a nikdy ji nepotvrdi - bez tohoto varovani to vypada, ze se
+        nedeje nic.
+        """
+        try:
+            manifest = load_config(self.control_manifest_path)
+        except (OSError, json.JSONDecodeError):
+            return
+        missing = sorted(
+            {
+                url.rsplit("/", 1)[-1]
+                for name, group in manifest.items()
+                if isinstance(group, dict)
+                for key, url in group.items()
+                # gwctl si brana generuje sama, az kdyz zna svoji adresu.
+                if not (name == "endnode_libraries" and key == self.control_library)
+                and cre_source(self.config, url.rsplit("/", 1)[-1]) is None
+            }
+        )
+        if missing:
+            print(
+                "POZOR: chybí soubory z firmwaru " + ", ".join(missing) + " - "
+                "základna si bude konfiguraci stahovat pořád dokola",
+                flush=True,
+            )
 
     def _ensure_manifest_reload(self) -> None:
         """Vyzvat zakladnu k nacteni konfigurace, kdyz se zmenil CRE manifest.
