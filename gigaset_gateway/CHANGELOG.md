@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.24
+
+- Fix the add-on failing to start: the flag that decides whether the base
+  station needs bootstrapping was read without ever being set.
+
 ## 1.0.23
 
 - Always report what the base station says its rule engine configuration looks
