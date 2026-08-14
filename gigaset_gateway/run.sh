@@ -130,6 +130,20 @@ fi
 # ho dodat od uzivatele.
 BOOTSTRAP=false
 
+# Manifest povazujeme za vlastni teto zakladne, kdyz ho dodal uzivatel, nebo
+# kdyz mame jeji Lua z firmwaru.  Bez nej se doplnek nespousti: zakladna maze
+# soubory, ktere v prijatem manifestu nejsou, a cizi manifest by ji tak pripravil
+# o pravidla, ktera uz z vypnuteho cloudu nikdo neziská.
+OWN_MANIFEST=true
+if [ ! -f "${SHARE}/cre_manifest.json" ] \
+    && [ -z "$(ls -A "${FIRMWARE_CRE}" 2>/dev/null)" ]; then
+    bashio::log.fatal \
+        "Chybí manifest CRE vaší základny. Vytvřte ho podle návodu v dokumentaci
+         doplňku a uložte jako '${SHARE}/cre_manifest.json'. Bez něj by základna
+         přišla o pravidla, která už není odkud stáhnout."
+    bashio::exit.nok
+fi
+
 jq -n \
     --arg timezone "$(bashio::config 'timezone')" \
     --arg timezone_name "$(bashio::config 'timezone_name')" \
@@ -148,6 +162,7 @@ jq -n \
     --arg base_configuration "${BASE_CONFIGURATION}" \
     --arg base_manifest "${SHARE}/cre_manifest.json" \
     --arg bootstrap "${BOOTSTRAP}" \
+    --arg own_manifest "${OWN_MANIFEST}" \
     --arg control_requests "${CONTROL_REQUESTS}" \
     --arg mqtt_host "${MQTT_HOST}" \
     --arg mqtt_port "${MQTT_PORT}" \
@@ -177,6 +192,7 @@ jq -n \
         cre_manifest_file: $manifest,
         base_manifest_file: $base_manifest,
         bootstrap_manifest: ($bootstrap == "true"),
+        manifest_is_own: ($own_manifest == "true"),
         cre_source_dirs: [ $generated_cre, "/opt/gigaset/cre", $firmware_cre ],
         control: {
             enabled: true,

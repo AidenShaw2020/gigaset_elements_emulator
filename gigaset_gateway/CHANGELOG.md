@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.30
+
+- Refuse to start without the base station's own CRE manifest. A base deletes
+  every Lua file its manifest does not name, so handing it someone else's would
+  destroy rules that cannot be downloaded again now that the cloud is gone.
+- Ship the tools and the procedure for reading that manifest out of a base:
+  a read-only UART dump of the flash (`gigaset_uart_dump.py`) and
+  `extract_base_manifest.py`, which carves the data partitions and unpacks them
+  with `jefferson`. It is needed once; afterwards the control library keeps the
+  manifest up to date by itself.
+- Send the manifest with `nc` only. The base station's `wget` is a BusyBox
+  build with no long options, so it can never POST.
+
+## 1.0.29
+
+- Leave a base station's rule engine alone until its own manifest is available.
+  A fresh installation used to hand the base a manifest naming files nobody can
+  serve, which left it re-reading its configuration every half minute forever.
+  Sensors, battery, positions and MQTT discovery work either way - none of that
+  goes through the rule engine - so the add-on now simply runs read-only and
+  says what it needs for commands and calibration.
+
 ## 1.0.28
 
 - Never bootstrap a base station automatically. A base deletes every Lua file

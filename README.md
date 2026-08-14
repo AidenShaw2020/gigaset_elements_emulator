@@ -61,24 +61,31 @@ logged.
 
 The CRE manifest names the Lua files the base should run, by exact file name,
 and every base has a different one: it lists the versions the original cloud
-gave it, including the automation rules its owner created. The one bundled here
-comes from the machine this was developed on and is only a fallback.
+gave it, including the automation rules its owner created.
 
-If the base asks for files that cannot be served, it re-reads its configuration
-forever without confirming it, and the gateway names the missing files at
-start-up. In that case copy `/cfg/cre` from your own base over the bundled
-manifest (`cre_manifest_file`, or `/share/gigaset/cre_manifest.json` in the
-add-on). The gateway injects only its own libraries into it.
+**A base deletes every Lua file its manifest does not name.** Serving it anyone
+else's manifest therefore destroys rules that, with the cloud gone, cannot be
+downloaded again. The add-on refuses to start without your own manifest, and
+the gateway will not ask the base to re-read its configuration until it has it.
 
-The `gwctl` library sends that file over by itself once it is loaded, so in
-practice the manual copy is only needed on a base that has never run it. The
-upload lands in `base_manifest_file` and an existing file is never overwritten.
+Once the control library is running it sends `/mnt/data/cfg/cre` over by itself,
+so this is a one-time exercise. To get there the first time you need to read the
+base station's flash:
 
-**Never serve a base a manifest that is not its own.** It deletes every Lua
-file the manifest does not name, and the rules its owner created cannot be
-fetched again now that the cloud is gone. `bootstrap_manifest` cuts the served
-manifest down to the files the gateway can provide; it exists for recovering a
-base whose files are backed up, and it is off by default.
+1. Disconnect power, bridge GND and UTX on the 3-pin header, connect power,
+   remove the bridge, then attach a 3.3 V UART adapter. All LEDs stay dark and
+   the mask ROM starts emitting `STX` at 9600 baud. The header is, component
+   side with the ethernet jack down, left to right: **URX / GND / UTX**.
+2. `python gigaset_uart_dump.py --port COM3 --output flash.bin`
+   The dump is read-only - the tool never sends an erase or program command.
+   Eight megabytes take about thirteen minutes.
+3. `python -m pip install jefferson`
+4. `python extract_base_manifest.py flash.bin -o cre_manifest.json`
+5. Copy the result to `/share/gigaset/cre_manifest.json` (add-on) or point
+   `cre_manifest_file` at it (script).
+
+Keep the dump. It is the only backup of the rules on that base, and the Lua
+files in it are what you would need after a factory reset.
 
 Shipped here are only the four libraries written for this project:
 

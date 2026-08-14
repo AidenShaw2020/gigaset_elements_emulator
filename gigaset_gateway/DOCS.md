@@ -46,9 +46,21 @@ base has its own: it names the versions the original cloud gave it, including
 the automation rules its owner created. The add-on ships the one from the
 machine it was developed on, purely as a fallback.
 
-If your base is not identical, it will ask for files that nobody can serve, the
-log will list them at start-up (`POZOR: chybí soubory z firmwaru …`) and the
-base will keep re-reading its configuration without ever confirming it.
+Without your base's own manifest the add-on **refuses to start**, because a
+base deletes every Lua file its manifest does not name - and the rules its
+owner created cannot be downloaded again now that the cloud is gone.
+
+Reading it out of the base is a one-time exercise; afterwards the control
+library keeps the file up to date by itself. The repository has the tools and
+the full procedure (`gigaset_uart_dump.py`, `extract_base_manifest.py`); in
+short it is a UART dump of the flash followed by:
+
+```
+python -m pip install jefferson
+python extract_base_manifest.py flash.bin -o cre_manifest.json
+```
+
+Copy the result to `/share/gigaset/cre_manifest.json`.
 
 The fix is to give the add-on your own manifest: copy `/cfg/cre` from your base
 to `/share/gigaset/cre_manifest.json`. It is a small JSON file with the keys
