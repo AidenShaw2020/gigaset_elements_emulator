@@ -335,13 +335,21 @@ CONTROL_LUA_TEMPLATE = """-- Generovano gigaset_gateway.py, needitovat rucne.
 -- se v casovaci pta brany, jestli neco nema udelat.
 local M = {}
 local URL = "__URL__"
+local HOST = "__HOST__"
+local PORT = "__PORT__"
 local INTERVAL = __INTERVAL__
 local POLL = "/tmp/gwctl.poll"
 local OUT = "/tmp/gwctl.out"
 local ULE = "/tmp/gwctl.ule.json"
+local SEND = "/tmp/gwctl.send.sh"
+local LIST = "/tmp/gwctl.list"
 local ARM = "/tmp/gwarm."
 local POLL_TIMER = "gwctl_poll"
 local PAIR_TIMER = "gwctl_pairoff"
+
+-- Popis CRE teto zakladny se posle brane jednou za nacteni modulu.  Jinak by ho
+-- uzivatel musel vycist z flash, protoze zadna jina cesta k nemu nevede.
+local state_sent = false
 
 local function shell(label, cmd)
     os.execute("( timeout -t __TIMEOUT__ " .. cmd .. " ) > " .. OUT .. " 2>&1")
@@ -352,6 +360,41 @@ local function shell(label, cmd)
         handle:close()
     end
     cloudLog.warn("gwctl {} [{}]", label, output:sub(1, 300))
+end
+
+-- Manifest CRE zakladny (/cfg/cre) jmenuje presne ty Lua, ktere ma nacist, a na
+-- kazde zakladne je jiny.  Brana ho jinak nema odkud vzit - do flash se uzivatel
+-- bez rozebrani krabicky nedostane.  busybox wget POST neumi, tak se hlavicka
+-- i telo poskladaji do skriptu a posle je nc.
+--
+-- Vedle nej jde i vypis /mnt/data/cre.  Manifest je jen seznam jmen, takze se z
+-- vypisu da slozit i tehdy, kdyz uz zakladna svuj /cfg/cre prepsala.
+local function send_state()
+    if state_sent or HOST == "" then
+        return
+    end
+    state_sent = true
+    local script = io.open(SEND, "w")
+    if script == nil then
+        return
+    end
+    script:write("post() {\n")
+    script:write("  SIZE=$(wc -c < \"$2\")\n")
+    script:write("  {\n")
+    script:write("    printf 'POST %s HTTP/1.0\\r\\n' \"$1\"\n")
+    script:write("    printf 'Content-Length: %s\\r\\n\\r\\n' \"$SIZE\"\n")
+    script:write("    cat \"$2\"\n")
+    script:write("  } | nc " .. HOST .. " " .. PORT .. "\n")
+    script:write("}\n")
+    script:write("for d in endnode_libraries rules internal_rules; do\n")
+    script:write("  for f in /mnt/data/cre/$d/*.lua; do\n")
+    script:write("    [ -e \"$f\" ] && echo \"$d/${f##*/}\"\n")
+    script:write("  done\n")
+    script:write("done > " .. LIST .. "\n")
+    script:write("post /inventory " .. LIST .. "\n")
+    script:write("[ -f /cfg/cre ] && post /manifest /cfg/cre\n")
+    script:close()
+    shell("stav", "/bin/sh " .. SEND)
 end
 
 -- Prikaz pro UleApp na JBus tematu ulecontrol.  "sender" umi vzit payload ze
@@ -474,6 +517,7 @@ function M.on_timer(command)
     -- Prodlouzit smycku drive nez se cokoliv udela; kdyby dotaz nebo prikaz
     -- selhal, dalsi kolo se stejne naplanuje.
     timer_set(M.name, POLL_TIMER, INTERVAL, "s")
+    pcall(send_state)
     pcall(poll)
 end
 
@@ -488,8 +532,12 @@ def control_lua_source(
     pair_timeout: int = CONTROL_PAIR_TIMEOUT,
 ) -> str:
     """Render the permanently loaded CRE library that polls the gateway."""
+    authority = url.split("//", 1)[-1].split("/", 1)[0]
+    host, _, port = authority.partition(":")
     return (
         CONTROL_LUA_TEMPLATE.replace("__URL__", url)
+        .replace("__HOST__", host)
+        .replace("__PORT__", port or "80")
         .replace("__INTERVAL__", str(interval))
         .replace("__TIMEOUT__", str(timeout))
         .replace("__POLL_TIMEOUT__", str(CONTROL_POLL_TIMEOUT))
@@ -580,8 +628,68 @@ def cre_source(config: dict[str, Any], filename: str) -> bytes | None:
     return None
 
 
+# Skupiny CRE souboru tak, jak lezi na zakladne v /mnt/data/cre.
+CRE_GROUPS = ("endnode_libraries", "rules", "internal_rules")
+INVENTORY_RE = re.compile(
+    r"^(?P<group>[a-z_]+)/(?P<file>(?P<key>[A-Za-z0-9_.-]+)-(?P<version>[0-9]+)\.lua)$"
+)
+
+
+def manifest_from_inventory(listing: str) -> dict[str, Any]:
+    """Slozit CRE manifest z vypisu souboru, ktere zakladna ma na disku.
+
+    Manifest neni nic jineho nez seznam jmen, takze se da rekonstruovat i tehdy,
+    kdyz uz zakladna svuj puvodni /cfg/cre neme - a to je jedina cesta, jak ho
+    ziskat bez vycteni flash pameti.  Ze jmena souboru plyne i cislo skupiny:
+    custom_template_rule_recipe-30599010-143.lua patri do skupiny 30599010.
+    """
+    best: dict[str, dict[str, tuple[int, str]]] = {group: {} for group in CRE_GROUPS}
+    for line in listing.splitlines():
+        match = INVENTORY_RE.match(line.strip())
+        if match is None or match.group("group") not in best:
+            continue
+        group = match.group("group")
+        key = match.group("key")
+        version = int(match.group("version"))
+        if group == "endnode_libraries":
+            url = f"/api/v1/bs01/configuration/libs/{key}/{match.group('file')}"
+        else:
+            identifier = key.rsplit("-", 1)[-1]
+            if not identifier.isdigit():
+                continue
+            url = f"/api/v1/bs01/configuration/rules/{identifier}/{match.group('file')}"
+        # Zakladna si stare verze nechava, takze plati ta nejvyssi.
+        if key not in best[group] or best[group][key][0] < version:
+            best[group][key] = (version, url)
+    return {
+        group: {key: url for key, (_, url) in sorted(entries.items())}
+        for group, entries in best.items()
+    }
+
+
+def servable_manifest(config: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    """Manifest omezeny na polozky, ktere brana umi obslouzit."""
+    reduced: dict[str, Any] = {}
+    for group, entries in manifest.items():
+        if not isinstance(entries, dict):
+            reduced[group] = entries
+            continue
+        reduced[group] = {
+            key: url
+            for key, url in entries.items()
+            if cre_source(config, url.rsplit("/", 1)[-1]) is not None
+        }
+    return reduced
+
+
 def local_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
     cre_manifest = load_config(Path(config["cre_manifest_file"]))
+    if config.get("bootstrap_manifest"):
+        # Manifest teto zakladny jeste neznáme.  Kdybychom ji poslali cizi,
+        # zada si soubory, ktere nikdy nemela, dostane 404 a konfiguraci uz
+        # nikdy nepotvrdi - tim padem by se k ni nedostala ani nase ridici
+        # knihovna, ktera jako jedina umi rict, co na disku doopravdy ma.
+        cre_manifest = servable_manifest(config, cre_manifest)
     base_configuration = load_config(Path(config["base_configuration_file"]))
     canonical = json.dumps(
         {"cre": cre_manifest, "configuration": base_configuration},
@@ -1639,6 +1747,80 @@ class Gateway:
             }
         )
 
+    def store_base_inventory(self, document: bytes) -> bool:
+        """Slozit manifest z vypisu souboru, ktere zakladna ma na disku."""
+        manifest = manifest_from_inventory(document.decode("utf-8", "replace"))
+        libraries = manifest.get("endnode_libraries", {})
+        if len(libraries) < 10:
+            print(
+                f"CONTROL INVENTÁŘ vypadá neúplně ({len(libraries)} knihoven), "
+                "ignoruji",
+                flush=True,
+            )
+            return False
+        print(
+            "CONTROL INVENTÁŘ "
+            + ", ".join(f"{group} {len(manifest[group])}" for group in CRE_GROUPS),
+            flush=True,
+        )
+        self.store_base_manifest(
+            json.dumps(manifest).encode("utf-8"), source="inventáře"
+        )
+        self._adopt_base_manifest(manifest)
+        return True
+
+    def _adopt_base_manifest(self, manifest: dict[str, Any]) -> None:
+        """Prejit na manifest zakladny hned, bez cekani na restart.
+
+        Zustavaji jen polozky, jejichz soubor brana umi obslouzit - tedy vlastni
+        knihovny doplnku a gwctl.  Vsechno ostatni si zakladna uz na disku ma.
+        """
+        try:
+            live = load_config(self.control_manifest_path)
+        except (OSError, json.JSONDecodeError):
+            return
+        if not self.config.get("bootstrap_manifest"):
+            return
+        merged = json.loads(json.dumps(manifest))
+        libraries = merged.setdefault("endnode_libraries", {})
+        for key, url in live.get("endnode_libraries", {}).items():
+            if cre_source(self.config, url.rsplit("/", 1)[-1]) is not None:
+                libraries[key] = url
+        atomic_json_write(self.control_manifest_path, merged)
+        # Zavadeci rezim uz nema co delat, manifest teto zakladny je znamy.
+        self.config["bootstrap_manifest"] = False
+        print("CONTROL nasazuji manifest základny", flush=True)
+        self._ensure_manifest_reload()
+
+    def store_base_manifest(self, document: bytes, source: str = "základny") -> bool:
+        """Ulozit manifest, ktery o sobe poslala zakladna.
+
+        Pouzije se az pri pristim startu, takze bezici konfiguraci nerozhodi.
+        Soubor dodany uzivatelem se nikdy neprepisuje.
+        """
+        target = self.config.get("base_manifest_file")
+        if not target:
+            return False
+        try:
+            manifest = json.loads(document.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            print("CONTROL MANIFEST není platný JSON", flush=True)
+            return False
+        if not isinstance(manifest, dict) or "endnode_libraries" not in manifest:
+            print("CONTROL MANIFEST nemá očekávaný tvar", flush=True)
+            return False
+        path = Path(target)
+        if path.exists():
+            return True
+        atomic_json_write(path, manifest)
+        print(
+            f"CONTROL MANIFEST z {source} uložen do {path} "
+            f"({len(manifest.get('endnode_libraries', {}))} knihoven, "
+            f"{len(manifest.get('rules', {}))} pravidel)",
+            flush=True,
+        )
+        return True
+
     def _check_cre_sources(self) -> None:
         """Ohlasit polozky manifestu, ktere brana neumi obslouzit.
 
@@ -2415,6 +2597,28 @@ def dns_server_loop(bind_ip: str, target_ip: str) -> None:
         print(f"DNS/UDP {peer[0]} {hostname} -> {target_ip}", flush=True)
 
 
+CONTROL_UPLOAD_LIMIT = 256 * 1024
+
+
+def _read_upload(conn: socket.socket, head: bytes, rest: bytes) -> bytes:
+    """Docist telo POSTu podle Content-Length, nejvyse do pevneho stropu."""
+    length = CONTROL_UPLOAD_LIMIT
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            try:
+                length = min(int(value.strip()), CONTROL_UPLOAD_LIMIT)
+            except ValueError:
+                pass
+    body = rest
+    while len(body) < length:
+        chunk = conn.recv(4096)
+        if not chunk:
+            break
+        body += chunk
+    return body[:length]
+
+
 def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> None:
     """Obslouzit jeden dotaz gwctl. Prosty HTTP - busybox wget TLS neumi."""
     try:
@@ -2427,10 +2631,30 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
             request += chunk
         line = request.split(b"\r\n", 1)[0].decode("ascii", "replace")
         parts = line.split(" ")
-        if len(parts) < 2 or parts[0] != "GET":
+        known = gateway.base_ids and peer not in gateway.base_ids
+        upload = (
+            len(parts) >= 2
+            and parts[0] == "POST"
+            and parts[1].split("?", 1)[0] in {"/manifest", "/inventory"}
+        )
+        if upload:
+            if known:
+                body = b""
+                status = b"403 Forbidden"
+                print(f"CONTROL UPLOAD odmítnut {peer}", flush=True)
+            else:
+                head, _, rest = request.partition(b"\r\n\r\n")
+                document = _read_upload(conn, head, rest)
+                if parts[1].startswith("/inventory"):
+                    accepted = gateway.store_base_inventory(document)
+                else:
+                    accepted = gateway.store_base_manifest(document)
+                body = b""
+                status = b"200 OK" if accepted else b"400 Bad Request"
+        elif len(parts) < 2 or parts[0] != "GET":
             body = b""
             status = b"400 Bad Request"
-        elif gateway.base_ids and peer not in gateway.base_ids:
+        elif known:
             # Fronta se cte destruktivne, takze ji smi vybrat jen zakladna.
             body = b""
             status = b"403 Forbidden"
