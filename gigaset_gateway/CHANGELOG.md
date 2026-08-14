@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.23
+
+- Always report what the base station says its rule engine configuration looks
+  like, even when the stored manifest is kept as it is.
+
 ## 1.0.22
 
 - Say plainly that calibrating a `um01` does not work yet. The sensor reports

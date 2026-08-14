@@ -1810,15 +1810,16 @@ class Gateway:
             print("CONTROL MANIFEST nemá očekávaný tvar", flush=True)
             return False
         path = Path(target)
+        summary = (
+            f"{len(manifest.get('endnode_libraries', {}))} knihoven, "
+            f"{len(manifest.get('rules', {}))} pravidel, "
+            f"{len(manifest.get('internal_rules', {}))} interních"
+        )
         if path.exists():
+            print(f"CONTROL MANIFEST z {source}: {summary} (uložený ponechán)", flush=True)
             return True
         atomic_json_write(path, manifest)
-        print(
-            f"CONTROL MANIFEST z {source} uložen do {path} "
-            f"({len(manifest.get('endnode_libraries', {}))} knihoven, "
-            f"{len(manifest.get('rules', {}))} pravidel)",
-            flush=True,
-        )
+        print(f"CONTROL MANIFEST z {source} uložen do {path}: {summary}", flush=True)
         return True
 
     def _check_cre_sources(self) -> None:
