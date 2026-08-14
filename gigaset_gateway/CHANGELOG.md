@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.22
+
+- Say plainly that calibrating a `um01` does not work yet. The sensor reports
+  its battery, temperature, firmware and its mounting and button events, but
+  never a position.
+
+## 1.0.21
+
+- Work out the CRE manifest of a base station that has never talked to this
+  add-on, so nobody has to read it out of the flash. On a first start with
+  nothing to go on, the base is served only the files the add-on can actually
+  provide - enough for it to accept the configuration and load the control
+  library. That library then lists `/mnt/data/cre`, and since a manifest is
+  nothing but a list of file names, the real one is rebuilt from the listing
+  and applied straight away. Verified against a real base: all 54 entries came
+  out identical to its own `/cfg/cre`.
+
+## 1.0.20
+
+- Fetch the CRE manifest from the base station itself. The control library now
+  sends `/cfg/cre` to the add-on once per rule engine load, so nobody has to
+  read it out of the flash to find out which Lua files their base expects. It
+  is stored as `/share/gigaset/cre_manifest.json` and used from the next start;
+  a file that is already there is never overwritten.
+
+## 1.0.19
+
+- Take the CRE manifest from `/share/gigaset/cre_manifest.json` when it exists.
+  The manifest names the exact Lua files a base has to run, so it differs from
+  base to base - it carries the versions the original cloud handed out plus the
+  owner's own automation rules. Until now every installation got the one from
+  the developer's base, which on any other base names files nobody can serve.
+  Whatever the source, only the add-on's own libraries are injected into it.
+
 ## 1.0.18
 
 - Search the `um01` calibration command systematically instead of guessing a

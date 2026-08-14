@@ -25,6 +25,7 @@
 
   "base_configuration_file": "base_configuration.json",
   "cre_manifest_file": "cre_manifest.json",
+  "base_manifest_file": "cre_manifest_from_base.json",
   "cre_source_dirs": [
     "cre_custom",
     "cre_firmware"

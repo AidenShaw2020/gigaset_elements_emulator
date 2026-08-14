@@ -7,8 +7,9 @@ its original firmware and simply talks to this gateway instead of
 Runs either as a **Home Assistant add-on** or as a plain Python script.
 
 Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
-with sensor types `ws02` (window), `ds02` (door), `um01` (universal window/door
-sensor), `ps02` (motion), `bn01` (button) and `is01` (siren).
+with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
+(button) and `is01` (siren). The `um01` universal sensor is **work in
+progress**: everything but its calibration works, see below.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -55,6 +56,30 @@ You do need them if the base is factory reset or otherwise loses
 `/mnt/data/cre`. Extract them from your own device and put them in the
 directory listed in `cre_source_dirs`; a missing file is answered with 404 and
 logged.
+
+### The manifest belongs to your base, not to this repository
+
+The CRE manifest names the Lua files the base should run, by exact file name,
+and every base has a different one: it lists the versions the original cloud
+gave it, including the automation rules its owner created. The one bundled here
+comes from the machine this was developed on and is only a fallback.
+
+If the base asks for files that cannot be served, it re-reads its configuration
+forever without confirming it, and the gateway names the missing files at
+start-up. In that case copy `/cfg/cre` from your own base over the bundled
+manifest (`cre_manifest_file`, or `/share/gigaset/cre_manifest.json` in the
+add-on). The gateway injects only its own libraries into it.
+
+The `gwctl` library sends that file over by itself once it is loaded, so in
+practice the manual copy is only needed on a base that has never run it. The
+upload lands in `base_manifest_file` and an existing file is never overwritten.
+
+With `bootstrap_manifest` the gateway can work it out on its own: it starts by
+serving only the files it can actually provide, which is enough for the base to
+accept the configuration and load `gwctl`. That library lists `/mnt/data/cre`
+and, because a manifest is nothing but a list of file names, the real one is
+rebuilt from the listing and applied immediately. The add-on turns this on by
+itself when it has neither a manifest nor any firmware Lua to fall back on.
 
 Shipped here are only the four libraries written for this project:
 
@@ -192,7 +217,7 @@ base station.
 | node | entities |
 |---|---|
 | `ws02`, `ds02` | contact, tilt, position, calibration state, battery, calibrate / reset calibration buttons |
-| `um01` | contact, position, calibration state, temperature, battery, two calibration step buttons and a reset calibration button |
+| `um01` | contact, position, calibration state, temperature, battery, two calibration step buttons and a reset calibration button - **calibration does not work yet** |
 | `ps02` | motion with a configurable off delay, battery |
 | `bn01` | device triggers and an `event` entity, battery |
 | `is01` | siren on/off, sound pattern selector |
@@ -282,6 +307,11 @@ to them.
 
 ## Calibration of the universal sensor
 
+> **Not solved yet.** An `um01` reports its battery, temperature, firmware and
+> its mounting and button events, but it cannot be calibrated, and without a
+> calibration it never reports a position. If you have one, it is currently of
+> limited use.
+
 `um01` is an angle sensor that can be mounted on a window or on a door, and it
 stores two reference positions instead of one:
 
@@ -292,17 +322,10 @@ stores two reference positions instead of one:
 | `cal2req` | waiting for the *open* position to be stored |
 | `cal2done` | calibration finished |
 
-Nothing is answered automatically here - each step records the position the
-sensor is physically in, so the user has to move it in between:
-
-1. Mount the sensor and close the window or door.
-2. Press *Kalibrace 1 - zavreno* (`calibrate_step1`).
-3. Open the window or door fully.
-4. Press *Kalibrace 2 - otevreno* (`calibrate_step2`).
-
-The commands are armed the same way as for `ws02`, so they are delivered with
-the sensor's next request, usually within a second or two. Until both steps are
-done the *Calibration* entity shows which one the sensor is waiting for.
+What is missing is the command that answers `cal1req`. The bundled `um01`
+library looks for it: pressing a calibration button makes it try one candidate
+per request from the sensor and log which one was sent. A single command can
+also be tried through the `endnode_command` control action.
 
 ## Siren
 

@@ -77,24 +77,47 @@ if [ ! -f "${CERTIFICATE}" ] || [ ! -f "${PRIVATE_KEY}" ]; then
 fi
 
 # --- soubory, ktere si brana za behu prepisuje ------------------------------
-if [ ! -f "${MANIFEST}" ]; then
-    cp /opt/gigaset/cre_manifest.json "${MANIFEST}"
+# Manifest rika zakladne, ktere Lua ma nacist, a jmenuje presne ty verze, ktere
+# ji kdysi nadelil originalni cloud - vcetne pravidel zalozenych uzivatelem.
+# Kazda zakladna ma proto svuj vlastni; ten zabudovany pochazi z vyvojove a na
+# cizi zakladne by jmenoval soubory, ktere nikdy nemela.
+SOURCE_MANIFEST=/opt/gigaset/cre_manifest.json
+if [ -f "${SHARE}/cre_manifest.json" ]; then
+    SOURCE_MANIFEST="${SHARE}/cre_manifest.json"
+    bashio::log.info "Manifest CRE z '${SOURCE_MANIFEST}'."
 else
-    # Manifest zustava v /data, jinak by se pri kazdem startu zahodila serie
-    # gwctl a zakladna by zbytecne delala reload CRE.  Knihovny z nove verze
-    # doplnku se do nej ale musi dostat, jinak by upgrade nikdy nic nepridal.
-    if jq -s '
-        .[0] as $shipped
-      | .[1] as $current
-      | ($current * $shipped)
-      | .endnode_libraries.gwctl =
-            ($current.endnode_libraries.gwctl // $shipped.endnode_libraries.gwctl)
-    ' /opt/gigaset/cre_manifest.json "${MANIFEST}" > "${MANIFEST}.new"; then
-        mv "${MANIFEST}.new" "${MANIFEST}"
-    else
-        rm -f "${MANIFEST}.new"
-        bashio::log.warning "Manifest CRE nelze sloučit, používá se ten v /data."
-    fi
+    bashio::log.warning \
+        "Používá se zabudovaný manifest CRE. Pokud vaše základna hlásí chybějící
+         soubory, zkopírujte z ní '/cfg/cre' do '${SHARE}/cre_manifest.json'."
+fi
+
+# Vlastni knihovny doplnku se do manifestu doplni vzdy, at uz pochazi odkudkoliv.
+# Nazev souboru je <klic>-<verze>.lua, takze klic staci uriznout.
+OWN_LIBRARIES=$(
+    for path in /opt/gigaset/cre/*.lua; do
+        [ -e "${path}" ] || continue
+        file=$(basename "${path}")
+        key=${file%-*}
+        jq -n --arg key "${key}" --arg file "${file}" \
+            '{($key): "/api/v1/bs01/configuration/libs/\($key)/\($file)"}'
+    done | jq -s 'add // {}'
+) || OWN_LIBRARIES=""
+[ -n "${OWN_LIBRARIES}" ] || OWN_LIBRARIES="{}"
+
+# Serie gwctl musi prezit restart, jinak by zakladna delala zbytecny reload CRE.
+[ -f "${MANIFEST}" ] || echo '{}' > "${MANIFEST}"
+if jq -s --argjson own "${OWN_LIBRARIES}" '
+    .[0] as $source
+  | .[1] as $current
+  | $source
+  | .endnode_libraries = ((.endnode_libraries // {}) + $own)
+  | if ($current.endnode_libraries.gwctl // "") == "" then .
+    else .endnode_libraries.gwctl = $current.endnode_libraries.gwctl end
+' "${SOURCE_MANIFEST}" "${MANIFEST}" > "${MANIFEST}.new"; then
+    mv "${MANIFEST}.new" "${MANIFEST}"
+else
+    rm -f "${MANIFEST}.new"
+    bashio::log.warning "Manifest CRE nelze sloučit, používá se ten v /data."
 fi
 if [ ! -f "${CONTROL_REQUESTS}" ]; then
     echo '{ "requests": [] }' > "${CONTROL_REQUESTS}"
@@ -116,6 +139,8 @@ jq -n \
     --arg generated_cre "${GENERATED_CRE}" \
     --arg firmware_cre "${FIRMWARE_CRE}" \
     --arg base_configuration "${BASE_CONFIGURATION}" \
+    --arg base_manifest "${SHARE}/cre_manifest.json" \
+    --arg bootstrap "${BOOTSTRAP}" \
     --arg control_requests "${CONTROL_REQUESTS}" \
     --arg mqtt_host "${MQTT_HOST}" \
     --arg mqtt_port "${MQTT_PORT}" \
@@ -143,6 +168,9 @@ jq -n \
         raw_dns: { enabled: false },
         base_configuration_file: $base_configuration,
         cre_manifest_file: $manifest,
+        base_manifest_file: $base_manifest,
+        bootstrap_manifest: ($bootstrap == "true"),
+        bootstrap_manifest: ($bootstrap == "true"),
         cre_source_dirs: [ $generated_cre, "/opt/gigaset/cre", $firmware_cre ],
         control: {
             enabled: true,

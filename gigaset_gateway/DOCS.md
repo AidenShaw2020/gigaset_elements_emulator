@@ -5,8 +5,8 @@ its original firmware and simply talks to this add-on instead of
 `api-bs.gigaset-elements.de`.
 
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
-(door), `um01` (universal window/door sensor), `ps02` (motion), `bn01` (button)
-and `is01` (siren) nodes.
+(door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes. The `um01`
+universal sensor is work in progress - see *Calibration*.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -38,6 +38,34 @@ that case extract them from your own device and copy them to the directory in
 
 The add-on ships its own `gwctl`, `gwquiet`, `ws02`, `ds02` and `um01`
 libraries, which take precedence over the stock ones.
+
+### The CRE manifest (`/share/gigaset/cre_manifest.json`)
+
+The manifest tells the base which Lua files to run, by exact file name. Every
+base has its own: it names the versions the original cloud gave it, including
+the automation rules its owner created. The add-on ships the one from the
+machine it was developed on, purely as a fallback.
+
+If your base is not identical, it will ask for files that nobody can serve, the
+log will list them at start-up (`POZOR: chybí soubory z firmwaru …`) and the
+base will keep re-reading its configuration without ever confirming it.
+
+The fix is to give the add-on your own manifest: copy `/cfg/cre` from your base
+to `/share/gigaset/cre_manifest.json`. It is a small JSON file with the keys
+`endnode_libraries`, `internal_rules` and `rules`, and it is used exactly as it
+is - the add-on only injects its own libraries and its control library.
+
+Usually you do not have to do that by hand. The control library runs on the
+base station, so once it is loaded it sends `/cfg/cre` over on its own and the
+add-on writes that file for you.
+
+A base that has never run the control library is bootstrapped automatically:
+the add-on first serves it only the files it can provide, which is enough for
+the base to accept the configuration and load the control library. The library
+then lists `/mnt/data/cre` and the add-on rebuilds the real manifest from those
+file names. It costs one rule engine reload, some 20 seconds, during which the
+base runs none of its own rules. Nothing is deleted - the files stay on the
+base the whole time.
 
 ### Router
 
@@ -83,6 +111,7 @@ Every paired node appears through MQTT discovery, grouped under the base:
 
 - window / door: contact, tilt, position, calibration state, battery
 - universal sensor: contact, position, calibration state, temperature, battery
+  (calibration itself does not work yet, see below)
 - motion: motion sensor with a configurable off delay
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
@@ -130,6 +159,12 @@ automatically, because each step records the position it is physically in:
 4. Press *Kalibrace 2 - otevreno*.
 
 The *Calibration* entity shows which step the sensor is waiting for.
+
+**This does not work yet.** The command that answers the sensor's request is
+not known, and pressing a calibration button starts a search for it - the
+library tries one candidate per request from the sensor and logs each one.
+Until this is solved an `um01` reports its battery, temperature, firmware and
+its mounting and button events, but no position.
 
 ## Troubleshooting
 
