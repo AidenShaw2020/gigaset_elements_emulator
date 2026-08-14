@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.18
+
+- Search the `um01` calibration command systematically instead of guessing a
+  handful of names. The command is not present anywhere in the base station's
+  flash, the node answers `verreq` but says nothing about commands it does not
+  understand, so the only remaining option is to walk the space defined by the
+  grammar the firmware uses elsewhere: a bare word, `set=<property>,<value>`
+  and `mset=<a>;<b>`. One candidate per request, 180 in total.
+
 ## 1.0.17
 
 - Log what the base station reports on `/api/v1/bs/sink/unknown`. That is where
