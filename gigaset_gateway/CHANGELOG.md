@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.10
+
+- Log the messages the base station's Lua libraries produce (`CRE WARN …`).
+  The rule engine has no other output - the serial console is disabled in the
+  firmware - so until now there was no way to tell whether a library was even
+  loaded, let alone what it did with a command.
+- New control action `endnode_command`, which sends a free-form command to a
+  node. The ULE command vocabulary is not documented anywhere and the strings
+  live in the node's firmware, not in the base station, so trying a command is
+  the only way to verify it.
+
 ## 1.0.9
 
 - Support the `um01` universal window/door sensor. The stock library only

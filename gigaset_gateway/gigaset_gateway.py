@@ -250,6 +250,11 @@ CONTROL_ACTIONS = {
     # senzor fyzicky prestavit.
     "calibrate_step1": ("endnode", lambda _device_id: "cal1"),
     "calibrate_step2": ("endnode", lambda _device_id: "cal2"),
+    # Libovolny prikaz pro uzel, zadany v souboru s pozadavky polozkou
+    # "command".  Slovnik ULE prikazu neni nikde popsany a v binarkach zakladny
+    # nejsou zadne jeho retezce - jsou az ve firmwaru uzlu - takze jedina cesta,
+    # jak novy prikaz overit, je zkusit ho.
+    "endnode_command": ("endnode", lambda _device_id: ""),
     # Rucni ovladani sireny.  Jde primo na uzel stejnym prikazem, jaky posila
     # firmware v is01.on_unmanaged / off_unmanaged, tedy s obejitim
     # priority_manageru - probihajici poplach muze sirenu vzapeti prepnout zpet.
@@ -279,6 +284,7 @@ CONTROL_ACTIONS_NEEDING_DEVICE = {
     "calibrate_step1",
     "calibrate_step2",
     "cal_reset",
+    "endnode_command",
     "siren_on",
     "siren_off",
     *(f"pattern_{name}" for name in SIREN_PATTERNS),
@@ -286,6 +292,14 @@ CONTROL_ACTIONS_NEEDING_DEVICE = {
 
 # Request ids end up inside a Lua string literal, so keep them boring.
 CONTROL_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+
+# Volny prikaz pro koncovy uzel.  Konci v Lua literalu a pak na DECT lince,
+# takze projde jen to, co vypada jako "cal", "set=hbtime,60" nebo "pattern=2h,2D".
+ENDNODE_COMMAND_RE = re.compile(r"[a-z0-9=,;._-]{1,48}")
+
+# Hlaseni z Lua knihoven zakladny.  Zadny jiny pristup k jejich logu neexistuje
+# (seriova konzole je ve firmwaru vypnuta), takze se vypisuji na stdout.
+CRE_DIAG_RE = re.compile(r"^/api/v1/diag/cre/(?P<level>[a-z]+)")
 
 # Hard limit for a single command.  BusyBox 1.24.2 spells this "-t SECS".
 # Without it a hanging script would block the Lua VM until the watchdog fires.
@@ -491,7 +505,7 @@ def control_poll_line(request: dict[str, str]) -> str:
     device_type = request.get("device_type", "")
     label = f"{request['id']}/{request['action']}"
     return "|".join(
-        (kind, label, build(device_id), device_id, device_type)
+        (kind, label, request.get("command") or build(device_id), device_id, device_type)
     )
 
 
@@ -659,11 +673,18 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
             raise ValueError(f"Control request {request_id} needs a valid device_type")
     else:
         device_type = ""
+    command = str(item.get("command", "")).strip().lower()
+    if action == "endnode_command":
+        if ENDNODE_COMMAND_RE.fullmatch(command) is None:
+            raise ValueError(f"Control request {request_id} has invalid command")
+    else:
+        command = ""
     return {
         "id": request_id,
         "action": action,
         "device_id": device_id,
         "device_type": device_type,
+        "command": command,
     }
 
 
@@ -1884,6 +1905,20 @@ class Gateway:
         print(f"DIAG {peer} uloženo {len(body)} B -> {target}", flush=True)
         return target
 
+    @staticmethod
+    def _print_cre_log(path: str, text: str) -> None:
+        """Vypsat hlaseni z Lua knihoven bezicich na zakladne."""
+        match = CRE_DIAG_RE.match(path)
+        if match is None:
+            return
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {}
+        location = str(payload.get("location", "")).rsplit("/", 1)[-1]
+        message = payload.get("message", text)
+        print(f"CRE {match.group('level').upper()} {location} {message}", flush=True)
+
     def record(self, method: str, path: str, body: bytes, peer: str) -> None:
         if method == "POST" and path.startswith("/api/v1/bs/sink/diagnostic"):
             # Syslog upload (/mnt/data/log_messages) - can be hundreds of kB and
@@ -1902,6 +1937,8 @@ class Gateway:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        self._print_cre_log(path, text)
 
         self.remember_base_identity(peer, base_identity_from_action(path, text))
 
