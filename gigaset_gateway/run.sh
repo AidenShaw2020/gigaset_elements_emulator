@@ -82,8 +82,10 @@ fi
 # Kazda zakladna ma proto svuj vlastni; ten zabudovany pochazi z vyvojove a na
 # cizi zakladne by jmenoval soubory, ktere nikdy nemela.
 SOURCE_MANIFEST=/opt/gigaset/cre_manifest.json
+MANIFEST_FROM_BASE=false
 if [ -f "${SHARE}/cre_manifest.json" ]; then
     SOURCE_MANIFEST="${SHARE}/cre_manifest.json"
+    MANIFEST_FROM_BASE=true
     bashio::log.info "Manifest CRE z '${SOURCE_MANIFEST}'."
 else
     bashio::log.warning \
@@ -138,7 +140,7 @@ OWN_MANIFEST=true
 if [ ! -f "${SHARE}/cre_manifest.json" ] \
     && [ -z "$(ls -A "${FIRMWARE_CRE}" 2>/dev/null)" ]; then
     bashio::log.fatal \
-        "Chybí manifest CRE vaší základny. Vytvřte ho podle návodu v dokumentaci
+        "Chybí manifest CRE vaší základny. Vytvořte ho podle návodu v dokumentaci
          doplňku a uložte jako '${SHARE}/cre_manifest.json'. Bez něj by základna
          přišla o pravidla, která už není odkud stáhnout."
     bashio::exit.nok
@@ -163,6 +165,7 @@ jq -n \
     --arg base_manifest "${SHARE}/cre_manifest.json" \
     --arg bootstrap "${BOOTSTRAP}" \
     --arg own_manifest "${OWN_MANIFEST}" \
+    --arg manifest_from_base "${MANIFEST_FROM_BASE}" \
     --arg control_requests "${CONTROL_REQUESTS}" \
     --arg mqtt_host "${MQTT_HOST}" \
     --arg mqtt_port "${MQTT_PORT}" \
@@ -193,6 +196,7 @@ jq -n \
         base_manifest_file: $base_manifest,
         bootstrap_manifest: ($bootstrap == "true"),
         manifest_is_own: ($own_manifest == "true"),
+        manifest_from_base: ($manifest_from_base == "true"),
         cre_source_dirs: [ $generated_cre, "/opt/gigaset/cre", $firmware_cre ],
         control: {
             enabled: true,
