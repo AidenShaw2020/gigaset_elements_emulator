@@ -1873,12 +1873,21 @@ class Gateway:
                 and cre_source(self.config, url.rsplit("/", 1)[-1]) is None
             }
         )
-        if missing:
+        if not missing:
+            return
+        if self.config.get("manifest_from_base"):
+            # Manifest je od teto zakladny, takze si tyhle soubory nese sama.
             print(
-                "POZOR: chybí soubory z firmwaru " + ", ".join(missing) + " - "
-                "základna si bude konfiguraci stahovat pořád dokola",
+                f"Z firmwaru chybí {len(missing)} souborů. Základna je má na sobě, "
+                "potřeba budou až po továrním resetu.",
                 flush=True,
             )
+            return
+        print(
+            "POZOR: chybí soubory z firmwaru " + ", ".join(missing) + " - "
+            "základna si bude konfiguraci stahovat pořád dokola",
+            flush=True,
+        )
 
     def _request_reload(self, reason: str) -> None:
         """Vyzvat zakladnu, aby si znovu nacetla konfiguraci.

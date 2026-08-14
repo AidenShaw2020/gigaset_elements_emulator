@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.33
+
+- Stop warning about missing firmware files when the manifest came from the
+  base station itself. It carries those files, so nothing is missing; they are
+  only needed again after a factory reset.
+
 ## 1.0.32
 
 - Build the upload request in Lua instead of in the shell. The base station's
