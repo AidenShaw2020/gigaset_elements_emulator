@@ -2007,6 +2007,9 @@ class Gateway:
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         self._print_cre_log(path, text)
+        if path.startswith("/api/v1/bs/sink/unknown"):
+            # Sem zakladna hlasi prikaz, kteremu uzel nerozumel (ule/error.c).
+            print(f"UZEL ODMÍTL {peer} {text.strip()}", flush=True)
 
         self.remember_base_identity(peer, base_identity_from_action(path, text))
 

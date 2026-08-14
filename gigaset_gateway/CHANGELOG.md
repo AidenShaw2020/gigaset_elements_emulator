@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.17
+
+- Log what the base station reports on `/api/v1/bs/sink/unknown`. That is where
+  it forwards a command a node did not understand, which is the only way to
+  tell a rejected command apart from one that was accepted and did nothing.
+
 ## 1.0.16
 
 - Log the whole message for node events that carry no `payload`. The `sink/dev`
