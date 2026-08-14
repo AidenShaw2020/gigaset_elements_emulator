@@ -221,6 +221,7 @@ can also be appended to the file named by `control.request_file`:
 | `unpair` | remove a node |
 | `calibrate` / `cal_reset` | send `cal` / `recal` to a node |
 | `calibrate_step1` / `calibrate_step2` | send `cal1` / `cal2` to a `um01` node |
+| `endnode_command` | send the command in the request's `command` field to a node |
 | `siren_on` / `siren_off` | sound the siren |
 | `pattern_*` | play a sound pattern |
 | `mode_home`, `mode_away`, `mode_night`, `mode_custom` | switch the alarm mode |

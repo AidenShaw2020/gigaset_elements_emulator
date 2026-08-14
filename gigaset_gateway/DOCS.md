@@ -99,12 +99,16 @@ can also be appended to `/share/gigaset/control.json`:
   "requests": [
     { "id": "pair-01", "action": "pair_start" },
     { "id": "cal-01", "action": "cal_reset",
-      "device_type": "ws02", "device_id": "025bcab723" }
+      "device_type": "ws02", "device_id": "025bcab723" },
+    { "id": "raw-01", "action": "endnode_command", "command": "cal",
+      "device_type": "um01", "device_id": "0355594c4c" }
   ]
 }
 ```
 
-Each request runs once; the id is remembered.
+Each request runs once; the id is remembered. `endnode_command` sends whatever
+is in `command` straight to the node, which is useful for trying out commands
+that have no button.
 
 ## Calibration
 
