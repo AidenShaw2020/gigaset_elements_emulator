@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.14
+
+- Second round of candidates for the `um01` calibration command. `cal`, `cal1`,
+  `cal=1`, `set=cal,1`, `calibrate` and `startcal` were all ignored by the node
+  on live hardware. The list now starts with `verreq`, which the node has to
+  answer, so it also shows whether the node accepts any command at all.
+
 ## 1.0.13
 
 - Find the calibration command of the `um01` sensor by trying it. The name is
