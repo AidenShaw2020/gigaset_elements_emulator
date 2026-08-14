@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.31
+
+- Log every request on the control port other than the routine poll, so it is
+  possible to tell whether what the base station sends actually arrives.
+
 ## 1.0.30
 
 - Refuse to start without the base station's own CRE manifest. A base deletes
