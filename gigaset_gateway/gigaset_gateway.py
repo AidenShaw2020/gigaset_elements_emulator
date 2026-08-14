@@ -1578,6 +1578,9 @@ class Gateway:
         # prepsal vychozi hodnotou z konfigurace zakladny a HA by ukazoval
         # rezim, ve kterem zakladna vubec neni.
         self.alarm_modes: dict[str, str] = dict(command_state.get("alarm_modes", {}))
+        # Otisk manifestu, ktery uz zakladna dostala.  Nova knihovna se k ni
+        # jinak nedostane - konfiguraci cte jen na vyzvu.
+        self.manifest_digest = str(command_state.get("manifest_digest", ""))
         self.control_commands: list[dict[str, Any]] = []
         self.announced_bases: set[str] = set()
         # Vychozi rezim alarmu z konfigurace, kterou zakladne servirujeme.
@@ -1594,6 +1597,7 @@ class Gateway:
         self.mqtt_control_counter = 0
         self.mqtt = MqttBridge(config.get("mqtt", {}), self.request_control_action)
         self._ensure_control_library()
+        self._ensure_manifest_reload()
 
     def _ensure_control_library(self) -> None:
         """Nahrat na zakladnu aktualni verzi gwctl, kdyz se lisi od te nasazene.
@@ -1629,6 +1633,38 @@ class Gateway:
         self.control_commands.append(
             {
                 "id": f"control-{self.control_serial}",
+                "type": "raw",
+                "message": {"type": "configuration-changed"},
+            }
+        )
+
+    def _ensure_manifest_reload(self) -> None:
+        """Vyzvat zakladnu k nacteni konfigurace, kdyz se zmenil CRE manifest.
+
+        Zakladna si konfiguraci sama nevyzvedava, takze bez teto zpravy by na ni
+        nova knihovna z aktualizace doplnku nikdy nedorazila.
+        """
+        try:
+            manifest = load_config(self.control_manifest_path)
+        except (OSError, json.JSONDecodeError):
+            return
+        digest = hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        if digest == self.manifest_digest:
+            return
+        self.manifest_digest = digest
+        self._save_command_state()
+        already_queued = any(
+            item.get("message", {}).get("type") == "configuration-changed"
+            for item in self.control_commands
+        )
+        if already_queued:
+            return
+        print("CONTROL manifest CRE se změnil, žádám o reload", flush=True)
+        self.control_commands.append(
+            {
+                "id": f"manifest-{digest}",
                 "type": "raw",
                 "message": {"type": "configuration-changed"},
             }
@@ -1708,6 +1744,7 @@ class Gateway:
                 "base_ids": self.base_ids,
                 "base_keys_seen": self.base_keys_seen,
                 "alarm_modes": self.alarm_modes,
+                "manifest_digest": self.manifest_digest,
             },
         )
 
@@ -1723,6 +1760,7 @@ class Gateway:
         print(f"ADRESA BRÁNY {address} (podle spojení od základny)", flush=True)
         if not self.control_poll_url:
             self._ensure_control_library()
+            self._ensure_manifest_reload()
 
     def base_name(self, peer: str) -> str:
         """Stabilni klic zakladny.

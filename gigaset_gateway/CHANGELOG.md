@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.11
+
+- Ask the base station to re-read its configuration whenever the CRE manifest
+  changes. Until now that only happened when the `gwctl` library changed, so a
+  library added by an add-on update was served but never actually requested -
+  the base only reads the manifest when it is told to.
+
 ## 1.0.10
 
 - Log the messages the base station's Lua libraries produce (`CRE WARN …`).
