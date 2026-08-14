@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -45,19 +46,24 @@ def carve(image: bytes, directory: Path) -> list[Path]:
 def unpack(partition: Path, directory: Path) -> list[Path]:
     """Rozbalit oddil a vratit vsechny nalezene manifesty."""
     output = directory / f"{partition.stem}_root"
-    try:
-        subprocess.run(
-            ["jefferson", "-d", str(output), str(partition)],
-            check=True,
-            capture_output=True,
-        )
-    except FileNotFoundError:
-        raise SystemExit(
-            "Chybi nastroj 'jefferson'. Nainstalujte ho prikazem:\n"
-            "    python -m pip install jefferson"
-        )
-    except subprocess.CalledProcessError as error:
-        print(f"{partition.name}: jefferson skoncil s chybou {error.returncode}")
+    # Volame ho pres interpret, ne pres PATH: pip ho casto uklada do adresare,
+    # ktery v PATH neni, a pak by to spadlo na "prikaz nenalezen".
+    command = [
+        sys.executable,
+        "-c",
+        "from jefferson.cli import main; main()",
+        "-d",
+        str(output),
+        str(partition),
+    ]
+    result = subprocess.run(command, capture_output=True)
+    if result.returncode != 0:
+        if b"No module named" in result.stderr:
+            raise SystemExit(
+                "Chybi nastroj 'jefferson'. Nainstalujte ho prikazem:\n"
+                "    python -m pip install jefferson"
+            )
+        print(f"{partition.name}: jefferson skoncil s chybou {result.returncode}")
         return []
     return sorted(output.rglob("cre"))
 

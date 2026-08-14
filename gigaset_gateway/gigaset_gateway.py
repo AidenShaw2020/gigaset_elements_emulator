@@ -2676,6 +2676,10 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
             request += chunk
         line = request.split(b"\r\n", 1)[0].decode("ascii", "replace")
         parts = line.split(" ")
+        if not line.startswith("GET /gwctl"):
+            # Dotazy na prikazy chodi kazdych par sekund, ostatni jsou vzacne a
+            # stoji za zaznam - jinak nejde poznat, jestli vubec dorazily.
+            print(f"CONTROL POŽADAVEK {peer} {line[:120]}", flush=True)
         known = gateway.base_ids and peer not in gateway.base_ids
         upload = (
             len(parts) >= 2
