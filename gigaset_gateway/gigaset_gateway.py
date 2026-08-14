@@ -19,15 +19,17 @@ ENDNODE_ID_RE = re.compile(r"^[0-9a-fA-F]{10}$")
 ENDNODE_TYPE_RE = re.compile(r"^[a-z]{2}[0-9]{2}$")
 # Spolecne jmeno z certifikatu zakladny, zaroven jeji identifikator.
 BASE_IDENTITY_RE = re.compile(r"^[0-9a-f]{16,64}$")
-# Prikazy, ktere ULE koncovy uzel skutecne zna.  Nazvy jako "moving", "closed",
-# "cal1" nebo "cal2" ze SensorCommand v puvodni aplikaci jsou stavy cloud API a
-# senzor na ne nereaguje, proto tu nejsou.
-SAFE_ENDNODE_COMMANDS = {"cal", "recal", "verreq"}
+# Prikazy, ktere ULE koncovy uzel skutecne zna.  "moving" a "closed" ze
+# SensorCommand v puvodni aplikaci jsou stavy cloud API a zadny senzor na ne
+# nereaguje, proto tu nejsou.  "cal1" a "cal2" jsou naopak dva kroky kalibrace
+# univerzalniho senzoru um01, ktery si o ne sam rika udalostmi cal1req/cal2req.
+SAFE_ENDNODE_COMMANDS = {"cal", "cal1", "cal2", "recal", "verreq"}
 
 # Popisky typu zarizeni pro Home Assistant.
 DEVICE_NAMES = {
     "ws02": "Gigaset okenni senzor",
     "ds02": "Gigaset dvernni senzor",
+    "um01": "Gigaset univerzalni senzor",
     "ps02": "Gigaset detektor pohybu",
     "bn01": "Gigaset tlacitko",
     "is01": "Gigaset sirena",
@@ -35,9 +37,34 @@ DEVICE_NAMES = {
 
 # Typy, ktere hlasi polohu, a jejich slovnik.  "tilt" je sklopene okno; chodi
 # stejne jako open/close az po uspesne kalibraci.
-POSITION_TYPES = {"ws02", "ds02"}
+POSITION_TYPES = {"ws02", "ds02", "um01"}
 POSITION_PAYLOADS = {"open", "close", "tilt"}
-CALIBRATION_PAYLOADS = {"calreq", "caldone"}
+
+# Nazev a trida kontaktni entity podle typu uzlu.  um01 je univerzalni senzor,
+# ktery se lepi na dvere i na okno, takze se hlasi obecnou tridou "opening".
+CONTACT_KINDS = {
+    "ws02": ("Window", "window"),
+    "ds02": ("Door", "door"),
+    "um01": ("Opening", "opening"),
+}
+
+# Udalost kalibrace -> stav, ktery se z ni ukaze v Home Assistantu.  ws02 a
+# ds02 kalibruji jednim krokem (calreq/caldone), um01 dvema: prvni si pamatuje
+# zavrenou polohu, druhy otevrenou.
+CALIBRATION_STATES = {
+    "calreq": "required",
+    "caldone": "ok",
+    "cal1req": "step1_required",
+    "cal1done": "step1_done",
+    "cal2req": "step2_required",
+    "cal2done": "ok",
+}
+CALIBRATION_OPTIONS = sorted(set(CALIBRATION_STATES.values()))
+
+# Sinky, pod kterymi uzel hlasi teplotu.  Stejne nazvy pouzivaji i uzly, ktere
+# zadnou teplotu neposilaji (ws02 pod "state" posila treba "calreq"), takze o
+# tom, jestli o teplotu jde, rozhoduje az tvar hodnoty.
+TEMPERATURE_SINKS = {"tp", "state"}
 
 # Zvukove vzory sireny is01, mapovane na ULE prikaz.  Format je
 # "<celkova doba>,<sekvence>", kde sekvence strida delku tonu a ticha;
@@ -75,6 +102,7 @@ DISCOVERY_SUFFIXES = (
     ("sensor", "_battery_voltage"),
     ("sensor", "_position"),
     ("sensor", "_calibration"),
+    ("sensor", "_temperature"),
     ("sensor", "_ver"),
     ("sensor", "_hwver"),
     ("sensor", "_event"),
@@ -86,6 +114,8 @@ DISCOVERY_SUFFIXES = (
     ("select", "_pattern"),
     ("button", "_unpair"),
     ("button", "_calibrate"),
+    ("button", "_calibrate_step1"),
+    ("button", "_calibrate_step2"),
     ("button", "_cal_reset"),
     ("button", "_siren_off"),
     ("event", "_button"),
@@ -115,6 +145,7 @@ STATE_TOPICS = (
     "contact",
     "tilt",
     "calibration",
+    "temperature",
     "ver",
     "hwver",
     "last_event",
@@ -144,6 +175,13 @@ BASE_CONTROLS = (
 DEVICE_CONTROLS = (("unpair", "Odparovat", "mdi:link-off"),)
 POSITION_CONTROLS = (
     ("calibrate", "Kalibrovat", "mdi:tune"),
+    ("cal_reset", "Zrusit kalibraci", "mdi:restore"),
+)
+# Univerzalni senzor si kazdou z obou mezi ulozi zvlast, takze musi byt
+# oddelene i tlacitka - mezi kroky uzivatel senzor fyzicky prestavi.
+TWO_STEP_CONTROLS = (
+    ("calibrate_step1", "Kalibrace 1 - zavreno", "mdi:numeric-1-box"),
+    ("calibrate_step2", "Kalibrace 2 - otevreno", "mdi:numeric-2-box"),
     ("cal_reset", "Zrusit kalibraci", "mdi:restore"),
 )
 
@@ -201,11 +239,17 @@ CONTROL_ACTIONS = {
     # Samotny "cal" senzor prijme jen v reakci na vlastni "calreq"; mimo nej ho
     # ignoruje, takze akce "calibrate" ma smysl hlavne pro nezkalibrovany uzel.
     #
-    # POZOR: "moving", "closed", "cal1" a "cal2" ze tridy SensorCommand v APK
-    # jsou nazvy STAVU cloud API, ne ULE prikazy.  Overeno na zivem HW: senzor
-    # na ne nijak nereaguje.
+    # POZOR: "moving" a "closed" ze tridy SensorCommand v APK jsou nazvy STAVU
+    # cloud API, ne ULE prikazy.  Overeno na zivem HW: senzor na ne nijak
+    # nereaguje.
     "calibrate": ("endnode", lambda _device_id: "cal"),
     "cal_reset": ("endnode", lambda _device_id: "recal"),
+    # Univerzalni senzor um01 kalibruje dvema kroky a sam si o ne rika
+    # udalostmi "cal1req" a "cal2req".  Automaticky se neodpovida: prvni krok
+    # ulozi zavrenou polohu, druhy otevrenou, takze mezi nimi musi uzivatel
+    # senzor fyzicky prestavit.
+    "calibrate_step1": ("endnode", lambda _device_id: "cal1"),
+    "calibrate_step2": ("endnode", lambda _device_id: "cal2"),
     # Rucni ovladani sireny.  Jde primo na uzel stejnym prikazem, jaky posila
     # firmware v is01.on_unmanaged / off_unmanaged, tedy s obejitim
     # priority_manageru - probihajici poplach muze sirenu vzapeti prepnout zpet.
@@ -232,6 +276,8 @@ CONTROL_ACTIONS = {
 CONTROL_ACTIONS_NEEDING_DEVICE = {
     "unpair",
     "calibrate",
+    "calibrate_step1",
+    "calibrate_step2",
     "cal_reset",
     "siren_on",
     "siren_off",
@@ -447,6 +493,27 @@ def control_poll_line(request: dict[str, str]) -> str:
     return "|".join(
         (kind, label, build(device_id), device_id, device_type)
     )
+
+
+def temperature_from_payload(sink: str, payload: str) -> float | None:
+    """Teplota ve stupnich Celsia, nebo None, kdyz hodnota teplotou neni.
+
+    Uzel ji hlasi ve dvou tvarech: pod "tp" jako prvni polozku seznamu
+    oddeleneho carkami, pod "state" jako druhou ze ctyr polozek oddelenych
+    strednikem.  Obe jsou v desetinach stupne, jen v prvnim pripade bezne i s
+    desetinnou teckou.
+    """
+    if sink == "tp":
+        field = payload.split(",")[0]
+    else:
+        parts = payload.split(";")
+        if len(parts) != 4:
+            return None
+        field = parts[1]
+    try:
+        return int(field.strip().replace(".", "")) / 10
+    except ValueError:
+        return None
 
 
 def cloud_event_for_command(command: dict[str, Any]) -> dict[str, Any]:
@@ -786,7 +853,9 @@ class MqttBridge:
         self, root: str, object_id: str, common: dict[str, Any], type_code: str
     ) -> None:
         controls = DEVICE_CONTROLS
-        if type_code in POSITION_TYPES:
+        if type_code == "um01":
+            controls = TWO_STEP_CONTROLS + DEVICE_CONTROLS
+        elif type_code in POSITION_TYPES:
             controls = POSITION_CONTROLS + DEVICE_CONTROLS
         for action, name, icon in controls:
             self.discovery(
@@ -1055,10 +1124,28 @@ class MqttBridge:
                 **common,
                 "name": "Calibration",
                 "device_class": "enum",
-                "options": ["ok", "required"],
+                "options": CALIBRATION_OPTIONS,
                 "state_topic": f"{root}/calibration",
                 "entity_category": "diagnostic",
                 "unique_id": object_id + "_calibration",
+            },
+        )
+
+    def _temperature(
+        self, root: str, object_id: str, common: dict[str, Any], celsius: float
+    ) -> None:
+        self.publish(f"{root}/temperature", f"{celsius:.1f}")
+        self.discovery(
+            "sensor",
+            object_id + "_temperature",
+            {
+                **common,
+                "name": "Temperature",
+                "device_class": "temperature",
+                "state_class": "measurement",
+                "unit_of_measurement": "°C",
+                "state_topic": f"{root}/temperature",
+                "unique_id": object_id + "_temperature",
             },
         )
 
@@ -1100,7 +1187,7 @@ class MqttBridge:
         self.publish(f"{root}/contact", "OFF" if payload == "close" else "ON")
         self.publish(f"{root}/tilt", "ON" if payload == "tilt" else "OFF")
 
-        is_window = type_code == "ws02"
+        name, device_class = CONTACT_KINDS.get(type_code, ("Opening", "opening"))
         # Uzel, ktery hlasi polohu, je z definice zkalibrovany - pred kalibraci
         # posila jen calreq.
         self._calibration(root, object_id, common, "ok")
@@ -1109,8 +1196,8 @@ class MqttBridge:
             object_id + "_contact",
             {
                 **common,
-                "name": "Window" if is_window else "Door",
-                "device_class": "window" if is_window else "door",
+                "name": name,
+                "device_class": device_class,
                 "state_topic": f"{root}/contact",
                 "payload_on": "ON",
                 "payload_off": "OFF",
@@ -1127,7 +1214,10 @@ class MqttBridge:
                 "unique_id": object_id + "_position",
             },
         )
-        if is_window:
+        # U univerzalniho senzoru se entita sklopeni zaklada az ve chvili, kdy
+        # sklopeni opravdu nahlasi - nalepeny na dverich by zustala navzdy
+        # prazdna.
+        if type_code == "ws02" or payload == "tilt":
             self.discovery(
                 "binary_sensor",
                 object_id + "_tilt",
@@ -1277,6 +1367,14 @@ class MqttBridge:
         if not payload:
             return
 
+        # Teplotu hlasi jen nektere uzly (um01) a pod stejnymi sinky, pod
+        # jakymi jine posilaji text, takze rozhoduje az tvar hodnoty.
+        if sink in TEMPERATURE_SINKS:
+            celsius = temperature_from_payload(sink, payload)
+            if celsius is not None:
+                self._temperature(root, object_id, common, celsius)
+                return
+
         if payload == "deleted":
             self.remove_device(root, object_id)
             return
@@ -1285,12 +1383,12 @@ class MqttBridge:
             self._position(root, object_id, common, type_code, payload)
             return
 
-        if payload in CALIBRATION_PAYLOADS:
+        if payload in CALIBRATION_STATES:
             self._calibration(
                 root,
                 object_id,
                 common,
-                "required" if payload == "calreq" else "ok",
+                CALIBRATION_STATES[payload],
             )
             return
 

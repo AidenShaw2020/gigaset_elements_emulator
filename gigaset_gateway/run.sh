@@ -79,6 +79,22 @@ fi
 # --- soubory, ktere si brana za behu prepisuje ------------------------------
 if [ ! -f "${MANIFEST}" ]; then
     cp /opt/gigaset/cre_manifest.json "${MANIFEST}"
+else
+    # Manifest zustava v /data, jinak by se pri kazdem startu zahodila serie
+    # gwctl a zakladna by zbytecne delala reload CRE.  Knihovny z nove verze
+    # doplnku se do nej ale musi dostat, jinak by upgrade nikdy nic nepridal.
+    if jq -s '
+        .[0] as $shipped
+      | .[1] as $current
+      | ($current * $shipped)
+      | .endnode_libraries.gwctl =
+            ($current.endnode_libraries.gwctl // $shipped.endnode_libraries.gwctl)
+    ' /opt/gigaset/cre_manifest.json "${MANIFEST}" > "${MANIFEST}.new"; then
+        mv "${MANIFEST}.new" "${MANIFEST}"
+    else
+        rm -f "${MANIFEST}.new"
+        bashio::log.warning "Manifest CRE nelze sloučit, používá se ten v /data."
+    fi
 fi
 if [ ! -f "${CONTROL_REQUESTS}" ]; then
     echo '{ "requests": [] }' > "${CONTROL_REQUESTS}"

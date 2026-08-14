@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.9
+
+- Support the `um01` universal window/door sensor. The stock library only
+  handles temperature, so nothing ever answered the sensor's `cal1req` and it
+  asked for calibration forever. The add-on now ships its own `um01` library
+  and exposes contact, position, calibration state and battery, plus the two
+  calibration buttons. Both steps are deliberately manual: the first stores the
+  closed position and the second the open one, so the sensor has to be moved in
+  between.
+- Publish the temperature a node reports on its `tp` or `state` sink as a
+  temperature entity instead of leaving it in *Last event*.
+- Merge the shipped CRE manifest into the one kept in `/data` on every start.
+  It used to be copied only on the very first run, so a library added by an
+  add-on update never reached the base station.
+
 ## 1.0.7
 
 - Replace the bundled `cloudLog` library with `gwquiet`. The rule engine's
