@@ -123,19 +123,12 @@ if [ ! -f "${CONTROL_REQUESTS}" ]; then
     echo '{ "requests": [] }' > "${CONTROL_REQUESTS}"
 fi
 
-# Kdyz manifest teto zakladny neznáme a nemame ani Lua z jeji flash, nema smysl
-# ji posilat cizi - zadala by si soubory, ktere nikdy nemela, a konfiguraci by
-# uz nepotvrdila.  V zavadecim rezimu dostane jen to, co ji brana umi poslat;
-# jakmile se ozve ridici knihovna s vypisem sveho /mnt/data/cre, slozi se z nej
-# manifest na miru a nasadi se.
+# Zakladna soubory, ktere v manifestu nejsou, ze sveho disku SMAZE (overeno
+# 2026-08-14).  Poslat ji necely manifest proto znamena nenavratne prijit o
+# pravidla, ktera uz z vypnuteho cloudu nikdo neziská - nikdy to nedelat
+# automaticky.  Kdyz jeji manifest nezname, je jedina bezpecna cesta nechat si
+# ho dodat od uzivatele.
 BOOTSTRAP=false
-if [ ! -f "${SHARE}/cre_manifest.json" ] \
-    && [ -z "$(ls -A "${FIRMWARE_CRE}" 2>/dev/null)" ]; then
-    BOOTSTRAP=true
-    bashio::log.warning \
-        "Manifest CRE této základny zatím neznáme, spouštím zaváděcí režim.
-         Jakmile se ozve řídicí knihovna, sestaví se manifest na míru."
-fi
 
 jq -n \
     --arg timezone "$(bashio::config 'timezone')" \

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.28
+
+- Never bootstrap a base station automatically. A base deletes every Lua file
+  its manifest does not name, so serving it anything but its own manifest
+  destroys the rules its owner created - and with the cloud gone, those cannot
+  be downloaded again. The add-on now says what it needs instead of guessing.
+- Read the base station's manifest from `/mnt/data/cfg/cre`, which is where it
+  actually is.
+
 ## 1.0.27
 
 - Send the base station's rule engine inventory with `wget`, which is known to

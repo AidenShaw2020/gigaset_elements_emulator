@@ -56,16 +56,13 @@ to `/share/gigaset/cre_manifest.json`. It is a small JSON file with the keys
 is - the add-on only injects its own libraries and its control library.
 
 Usually you do not have to do that by hand. The control library runs on the
-base station, so once it is loaded it sends `/cfg/cre` over on its own and the
-add-on writes that file for you.
+base station, so once it is loaded it sends `/mnt/data/cfg/cre` over on its own
+and the add-on writes that file for you.
 
-A base that has never run the control library is bootstrapped automatically:
-the add-on first serves it only the files it can provide, which is enough for
-the base to accept the configuration and load the control library. The library
-then lists `/mnt/data/cre` and the add-on rebuilds the real manifest from those
-file names. It costs one rule engine reload, some 20 seconds, during which the
-base runs none of its own rules. Nothing is deleted - the files stay on the
-base the whole time.
+A base that has never run the control library does need the manual copy, and
+there is no way around it: **the base deletes every Lua file the manifest does
+not name**, so serving it a manifest that is not its own destroys the rules its
+owner created - and those cannot be fetched again now that the cloud is gone.
 
 ### Router
 
