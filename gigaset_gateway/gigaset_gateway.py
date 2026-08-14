@@ -342,7 +342,8 @@ local POLL = "/tmp/gwctl.poll"
 local OUT = "/tmp/gwctl.out"
 local ULE = "/tmp/gwctl.ule.json"
 local SEND = "/tmp/gwctl.send.sh"
-local STAT = "/tmp/gwctl.stat"
+local LIST = "/tmp/gwctl.list"
+local REQ = "/tmp/gwctl.req"
 local ARM = "/tmp/gwarm."
 local POLL_TIMER = "gwctl_poll"
 local PAIR_TIMER = "gwctl_pairoff"
@@ -371,13 +372,44 @@ local function shell(label, cmd)
     log("gwctl {} [{}]", label, output:sub(1, 300))
 end
 
--- Manifest CRE zakladny (/cfg/cre) jmenuje presne ty Lua, ktere ma nacist, a na
--- kazde zakladne je jiny.  Brana ho jinak nema odkud vzit - do flash se uzivatel
--- bez rozebrani krabicky nedostane.  busybox wget POST neumi, tak se hlavicka
--- i telo poskladaji do skriptu a posle je nc.
+-- Manifest CRE zakladny (/mnt/data/cfg/cre) jmenuje presne ty Lua, ktere ma
+-- nacist, a na kazde zakladne je jiny.  Brana ho jinak nema odkud vzit - do
+-- flash se uzivatel bez rozebrani krabicky nedostane.
 --
 -- Vedle nej jde i vypis /mnt/data/cre.  Manifest je jen seznam jmen, takze se z
--- vypisu da slozit i tehdy, kdyz uz zakladna svuj /cfg/cre prepsala.
+-- vypisu da slozit i tehdy, kdyz uz zakladna svuj manifest prepsala.
+--
+-- Cely HTTP pozadavek se sklada tady v Lua a shell uz jen preleje soubor do nc.
+-- Busybox na zakladne nema printf ani wget s dlouhymi volbami, takze hlavicku
+-- neni cim napsat a POST neni cim poslat.
+local function post(path, source)
+    local input = io.open(source, "r")
+    if input == nil then
+        return
+    end
+    local body = input:read("*a") or ""
+    input:close()
+    if body == "" then
+        return
+    end
+    local request = io.open(REQ, "w")
+    if request == nil then
+        return
+    end
+    request:write("POST ", path, " HTTP/1.0\r\n")
+    request:write("Content-Length: ", tostring(#body), "\r\n\r\n")
+    request:write(body)
+    request:close()
+
+    local script = io.open(SEND, "w")
+    if script == nil then
+        return
+    end
+    script:write("cat " .. REQ .. " | nc " .. HOST .. " " .. PORT .. "\n")
+    script:close()
+    shell("odeslani " .. path, "/bin/sh " .. SEND)
+end
+
 local function send_state()
     if state_sent or HOST == "" then
         return
@@ -388,47 +420,17 @@ local function send_state()
         return
     end
     -- Dlouhy retezec, aby se nemuselo escapovat nic z toho, co potrebuje shell.
-    -- Prenasi se pres nc; busybox wget na zakladne zna jen kratke volby, takze
-    -- POST pres nej poslat nejde (overeno: "wget: invalid option -- -").
     script:write([==[
-: > /tmp/gwctl.stat
-post() {
-  SIZE=$(wc -c < "$2")
-  {
-    printf 'POST %s HTTP/1.0\r\n' "$1"
-    printf 'Content-Length: %s\r\n\r\n' "$SIZE"
-    cat "$2"
-  } | nc __HOST__ __PORT__ && echo "$1=ok" >> /tmp/gwctl.stat \
-    || echo "$1=chyba" >> /tmp/gwctl.stat
-}
 for d in endnode_libraries rules internal_rules; do
   for f in /mnt/data/cre/$d/*.lua; do
     [ -e "$f" ] && echo "$d/${f##*/}"
   done
 done > /tmp/gwctl.list
-echo "souboru=$(wc -l < /tmp/gwctl.list)" >> /tmp/gwctl.stat
-post /inventory /tmp/gwctl.list
-[ -f /mnt/data/cfg/cre ] && post /manifest /mnt/data/cfg/cre
 ]==])
     script:close()
-    shell("stav", "/bin/sh " .. SEND)
-end
-
--- Vysledek posledniho pokusu o odeslani.  Pripoji se k dotazu na branu, protoze
--- dokud neni nactena knihovna cloudLog, jinou zpetnou vazbu nemame.
-local function status()
-    local handle = io.open(STAT, "r")
-    if handle == nil then
-        return ""
-    end
-    local text = (handle:read("*a") or ""):gsub("%s+", ",")
-    handle:close()
-    os.remove(STAT)
-    text = text:gsub("[^A-Za-z0-9=,._/-]", "")
-    if text == "" then
-        return ""
-    end
-    return "?s=" .. text
+    shell("vypis", "/bin/sh " .. SEND)
+    post("/inventory", LIST)
+    post("/manifest", "/mnt/data/cfg/cre")
 end
 
 -- Prikaz pro UleApp na JBus tematu ulecontrol.  "sender" umi vzit payload ze
@@ -517,7 +519,7 @@ local function poll()
     os.remove(POLL)
     os.execute(
         "( timeout -t __POLL_HARD__ /usr/bin/wget -q -T __POLL_TIMEOUT__ -O "
-            .. POLL .. " " .. URL .. status() .. " ) > /dev/null 2>&1"
+            .. POLL .. " " .. URL .. " ) > /dev/null 2>&1"
     )
     local handle = io.open(POLL, "r")
     if handle == nil then
