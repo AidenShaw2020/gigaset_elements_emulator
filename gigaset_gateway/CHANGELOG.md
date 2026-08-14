@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.32
+
+- Build the upload request in Lua instead of in the shell. The base station's
+  BusyBox has no `printf`, so the HTTP headers were never written and what
+  reached the add-on was the bare file contents, answered with 400.
+
 ## 1.0.31
 
 - Log every request on the control port other than the routine poll, so it is
