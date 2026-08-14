@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.26
+
+- Stop the control library from depending on the rule engine's logging module.
+  While a base station is being bootstrapped that module is not loaded, so
+  every log line raised an error that was caught and thrown away - taking the
+  rest of the work with it.
+
 ## 1.0.25
 
 - Fix the generated control library, which did not compile: the shell snippet

@@ -350,6 +350,15 @@ local PAIR_TIMER = "gwctl_pairoff"
 -- uzivatel musel vycist z flash, protoze zadna jina cesta k nemu nevede.
 local state_sent = false
 
+-- V zavadecim rezimu neni cloudLog v manifestu, takze modul nemusi existovat.
+-- Bez teto pojistky by na nem kazde hlaseni skoncilo chybou, kterou pcall
+-- spolkne - a s ni i praci, ktera se mela udelat.
+local function log(...)
+    if type(cloudLog) == "table" and cloudLog.warn ~= nil then
+        cloudLog.warn(...)
+    end
+end
+
 local function shell(label, cmd)
     os.execute("( timeout -t __TIMEOUT__ " .. cmd .. " ) > " .. OUT .. " 2>&1")
     local handle = io.open(OUT, "r")
@@ -358,7 +367,7 @@ local function shell(label, cmd)
         output = (handle:read("*a") or ""):gsub("%s+", " ")
         handle:close()
     end
-    cloudLog.warn("gwctl {} [{}]", label, output:sub(1, 300))
+    log("gwctl {} [{}]", label, output:sub(1, 300))
 end
 
 -- Manifest CRE zakladny (/cfg/cre) jmenuje presne ty Lua, ktere ma nacist, a na
@@ -405,7 +414,7 @@ end
 local function ule(label, cmd, dev)
     local handle = io.open(ULE, "w")
     if handle == nil then
-        cloudLog.warn("gwctl {} [nelze zapsat {}]", label, ULE)
+        log("gwctl {} [nelze zapsat {}]", label, ULE)
         return
     end
     if dev ~= nil and dev ~= "" then
@@ -422,7 +431,7 @@ end
 local function pairon(label, cmd, dev, devtype)
     ule(label, cmd, dev)
     timer_set(M.name, PAIR_TIMER, __PAIR_TIMEOUT__, "s")
-    cloudLog.warn("gwctl parovaci okno se zavre za {} s", __PAIR_TIMEOUT__)
+    log("gwctl parovaci okno se zavre za {} s", __PAIR_TIMEOUT__)
 end
 
 -- Prikaz pro konkretni koncovy uzel (senzor).  Musi jit pres CRE volani,
@@ -433,7 +442,7 @@ end
 -- knihovna daneho typu ji odesle znovu ve chvili, kdy se uzel sam ozve, a pak
 -- ji smaze.
 local function endnode(label, cmd, dev, devtype)
-    cloudLog.warn("gwctl {} ule_command_send {} {} {}", label, devtype, dev, cmd)
+    log("gwctl {} ule_command_send {} {} {}", label, devtype, dev, cmd)
     local handle = io.open(ARM .. dev, "w")
     if handle ~= nil then
         handle:write(cmd)
@@ -446,7 +455,7 @@ end
 -- tlacitko bn01, takze zakladna zmenu potvrdi udalosti
 -- alarm.*.settings_changed.mode a vsichni ostatni ji uvidi.
 local function alarmmode(label, mode, dev, devtype)
-    cloudLog.warn("gwctl {} rezim alarmu {}", label, mode)
+    log("gwctl {} rezim alarmu {}", label, mode)
     local_event_send("alarm.*.settings_changed.mode", mode)
 end
 
@@ -454,7 +463,7 @@ end
 -- probihajiciho poplachu.  Argument se predava vzdy - volani jen s nazvem
 -- udalosti zustane bez odezvy, proto ho firmware vsude vyplnuje konstantou.
 local function localevent(label, event, dev, devtype)
-    cloudLog.warn("gwctl {} local_event_send {}", label, event)
+    log("gwctl {} local_event_send {}", label, event)
     local_event_send(event, "unused_parameter")
 end
 
