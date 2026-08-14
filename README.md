@@ -74,12 +74,11 @@ The `gwctl` library sends that file over by itself once it is loaded, so in
 practice the manual copy is only needed on a base that has never run it. The
 upload lands in `base_manifest_file` and an existing file is never overwritten.
 
-With `bootstrap_manifest` the gateway can work it out on its own: it starts by
-serving only the files it can actually provide, which is enough for the base to
-accept the configuration and load `gwctl`. That library lists `/mnt/data/cre`
-and, because a manifest is nothing but a list of file names, the real one is
-rebuilt from the listing and applied immediately. The add-on turns this on by
-itself when it has neither a manifest nor any firmware Lua to fall back on.
+**Never serve a base a manifest that is not its own.** It deletes every Lua
+file the manifest does not name, and the rules its owner created cannot be
+fetched again now that the cloud is gone. `bootstrap_manifest` cuts the served
+manifest down to the files the gateway can provide; it exists for recovering a
+base whose files are backed up, and it is off by default.
 
 Shipped here are only the four libraries written for this project:
 

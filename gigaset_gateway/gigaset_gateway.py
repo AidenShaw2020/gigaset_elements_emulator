@@ -415,7 +415,7 @@ for d in endnode_libraries rules internal_rules; do
 done > /tmp/gwctl.list
 echo "souboru=$(wc -l < /tmp/gwctl.list)" >> /tmp/gwctl.stat
 post /inventory /tmp/gwctl.list
-[ -f /cfg/cre ] && post /manifest /cfg/cre
+[ -f /mnt/data/cfg/cre ] && post /manifest /mnt/data/cfg/cre
 ]==])
     script:close()
     shell("stav", "/bin/sh " .. SEND)
@@ -726,10 +726,9 @@ def servable_manifest(config: dict[str, Any], manifest: dict[str, Any]) -> dict[
 def local_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
     cre_manifest = load_config(Path(config["cre_manifest_file"]))
     if config.get("bootstrap_manifest"):
-        # Manifest teto zakladny jeste neznáme.  Kdybychom ji poslali cizi,
-        # zada si soubory, ktere nikdy nemela, dostane 404 a konfiguraci uz
-        # nikdy nepotvrdi - tim padem by se k ni nedostala ani nase ridici
-        # knihovna, ktera jako jedina umi rict, co na disku doopravdy ma.
+        # POZOR: zakladna soubory, ktere v manifestu nejsou, ze sveho disku
+        # smaze - vcetne pravidel, ktera uz z vypnuteho cloudu nikdo neziska.
+        # Necely manifest se proto smi poslat jen tomu, kdo o tom vi a ma zalohu.
         cre_manifest = servable_manifest(config, cre_manifest)
     base_configuration = load_config(Path(config["base_configuration_file"]))
     canonical = json.dumps(
