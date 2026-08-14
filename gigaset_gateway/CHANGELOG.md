@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.12
+
+- Name the manifest entries that cannot be served at start-up. A missing file
+  is answered with 404 and the base station then keeps re-reading its
+  configuration without ever confirming it, which looks like nothing happening
+  at all.
+
 ## 1.0.11
 
 - Ask the base station to re-read its configuration whenever the CRE manifest
