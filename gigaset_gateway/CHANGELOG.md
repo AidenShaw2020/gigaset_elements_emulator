@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.25
+
+- Fix the generated control library, which did not compile: the shell snippet
+  it writes was escaped once too few, so its string literals ended in the
+  middle of a line. The rule engine then refused the whole configuration and
+  the base station kept re-reading it. The snippet is now a Lua long string and
+  needs no escaping at all.
+
 ## 1.0.24
 
 - Fix the add-on failing to start: the flag that decides whether the base

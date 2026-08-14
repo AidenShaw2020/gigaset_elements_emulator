@@ -324,7 +324,7 @@ CONTROL_POLL_HARD_TIMEOUT = 4
 # kdyz brana mezitim spadne.
 CONTROL_PAIR_TIMEOUT = 600
 
-CONTROL_LUA_TEMPLATE = """-- Generovano gigaset_gateway.py, needitovat rucne.
+CONTROL_LUA_TEMPLATE = r"""-- Generovano gigaset_gateway.py, needitovat rucne.
 -- POZOR: nic se NESMI spoustet pri nacteni modulu.  os.execute blokuje celou
 -- Lua VM; kdyz to potka bootovaci cestu, watchdog zakladnu zresetuje a vznikne
 -- smycka, ze ktere uz neni cesta ven po siti (jen pres UART).
@@ -342,7 +342,6 @@ local POLL = "/tmp/gwctl.poll"
 local OUT = "/tmp/gwctl.out"
 local ULE = "/tmp/gwctl.ule.json"
 local SEND = "/tmp/gwctl.send.sh"
-local LIST = "/tmp/gwctl.list"
 local ARM = "/tmp/gwarm."
 local POLL_TIMER = "gwctl_poll"
 local PAIR_TIMER = "gwctl_pairoff"
@@ -378,21 +377,24 @@ local function send_state()
     if script == nil then
         return
     end
-    script:write("post() {\n")
-    script:write("  SIZE=$(wc -c < \"$2\")\n")
-    script:write("  {\n")
-    script:write("    printf 'POST %s HTTP/1.0\\r\\n' \"$1\"\n")
-    script:write("    printf 'Content-Length: %s\\r\\n\\r\\n' \"$SIZE\"\n")
-    script:write("    cat \"$2\"\n")
-    script:write("  } | nc " .. HOST .. " " .. PORT .. "\n")
-    script:write("}\n")
-    script:write("for d in endnode_libraries rules internal_rules; do\n")
-    script:write("  for f in /mnt/data/cre/$d/*.lua; do\n")
-    script:write("    [ -e \"$f\" ] && echo \"$d/${f##*/}\"\n")
-    script:write("  done\n")
-    script:write("done > " .. LIST .. "\n")
-    script:write("post /inventory " .. LIST .. "\n")
-    script:write("[ -f /cfg/cre ] && post /manifest /cfg/cre\n")
+    -- Dlouhy retezec, aby se nemuselo escapovat nic z toho, co potrebuje shell.
+    script:write([==[
+post() {
+  SIZE=$(wc -c < "$2")
+  {
+    printf 'POST %s HTTP/1.0\r\n' "$1"
+    printf 'Content-Length: %s\r\n\r\n' "$SIZE"
+    cat "$2"
+  } | nc __HOST__ __PORT__
+}
+for d in endnode_libraries rules internal_rules; do
+  for f in /mnt/data/cre/$d/*.lua; do
+    [ -e "$f" ] && echo "$d/${f##*/}"
+  done
+done > /tmp/gwctl.list
+post /inventory /tmp/gwctl.list
+[ -f /cfg/cre ] && post /manifest /cfg/cre
+]==])
     script:close()
     shell("stav", "/bin/sh " .. SEND)
 end
