@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.15
+
+- Third round of candidates for the `um01` calibration command, this time
+  following the DECT naming the firmware is built on: a request is answered by
+  a confirm, so `cal1req` should be answered by `cal1cfm` or `cal1res`. The
+  node replies to `verreq` within a second, so it does accept commands and only
+  the name is wrong.
+
 ## 1.0.14
 
 - Second round of candidates for the `um01` calibration command. `cal`, `cal1`,
