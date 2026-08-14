@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.13
+
+- Find the calibration command of the `um01` sensor by trying it. The name is
+  not recoverable from the base station - the command is only text that gets
+  forwarded over DECT and the node's firmware is what interprets it - and the
+  obvious `cal1` turned out to be wrong on live hardware. After the user asks
+  for a calibration step, the library now tries one candidate per request from
+  the sensor and logs which one the node finally accepted.
+
 ## 1.0.12
 
 - Name the manifest entries that cannot be served at start-up. A missing file
