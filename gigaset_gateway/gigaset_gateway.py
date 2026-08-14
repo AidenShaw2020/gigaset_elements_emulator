@@ -388,25 +388,18 @@ local function send_state()
         return
     end
     -- Dlouhy retezec, aby se nemuselo escapovat nic z toho, co potrebuje shell.
-    -- Prenos zkousi nejdriv wget, ktery na zakladne prokazatelne funguje;
-    -- busybox ho ale nemusi mit prelozeny s --post-data, proto zaloha pres nc.
-    -- Vysledek se zapise do souboru a odejde s pristim dotazem na branu - v
-    -- zavadecim rezimu je to jedina cesta, jak dat o sobe vedet.
+    -- Prenasi se pres nc; busybox wget na zakladne zna jen kratke volby, takze
+    -- POST pres nej poslat nejde (overeno: "wget: invalid option -- -").
     script:write([==[
 : > /tmp/gwctl.stat
 post() {
-  if wget -q -O /dev/null --post-data "$(cat "$2")" "http://__HOST__:__PORT__$1"
-  then
-    echo "$1=wget" >> /tmp/gwctl.stat
-    return 0
-  fi
   SIZE=$(wc -c < "$2")
   {
     printf 'POST %s HTTP/1.0\r\n' "$1"
     printf 'Content-Length: %s\r\n\r\n' "$SIZE"
     cat "$2"
-  } | nc __HOST__ __PORT__ && echo "$1=nc" >> /tmp/gwctl.stat \
-    || echo "$1=nic" >> /tmp/gwctl.stat
+  } | nc __HOST__ __PORT__ && echo "$1=ok" >> /tmp/gwctl.stat \
+    || echo "$1=chyba" >> /tmp/gwctl.stat
 }
 for d in endnode_libraries rules internal_rules; do
   for f in /mnt/data/cre/$d/*.lua; do
@@ -1779,13 +1772,7 @@ class Gateway:
         atomic_json_write(self.control_manifest_path, manifest)
         self._save_command_state()
         print(f"CONTROL nasazuji {filename}", flush=True)
-        self.control_commands.append(
-            {
-                "id": f"control-{self.control_serial}",
-                "type": "raw",
-                "message": {"type": "configuration-changed"},
-            }
-        )
+        self._request_reload(f"control-{self.control_serial}")
 
     def store_base_inventory(self, document: bytes) -> bool:
         """Slozit manifest z vypisu souboru, ktere zakladna ma na disku."""
@@ -1891,6 +1878,29 @@ class Gateway:
                 flush=True,
             )
 
+    def _request_reload(self, reason: str) -> None:
+        """Vyzvat zakladnu, aby si znovu nacetla konfiguraci.
+
+        Dokud nevime, ze mame manifest teto konkretni zakladny, se o to nesmi
+        zadat: zadala by si soubory, ktere nikdy nemela, dostala 404 a ptala by
+        se porad dokola.  Do te doby brana funguje jen ke cteni, coz je vsechno,
+        co jde delat bez vlastniho kodu na zakladne.
+        """
+        if not self.config.get("manifest_is_own", True):
+            print(
+                f"CONTROL {reason} - základnu ale nežádám o načtení konfigurace, "
+                "dokud nemám její vlastní manifest",
+                flush=True,
+            )
+            return
+        self.control_commands.append(
+            {
+                "id": f"reload-{reason}",
+                "type": "raw",
+                "message": {"type": "configuration-changed"},
+            }
+        )
+
     def _ensure_manifest_reload(self) -> None:
         """Vyzvat zakladnu k nacteni konfigurace, kdyz se zmenil CRE manifest.
 
@@ -1915,13 +1925,7 @@ class Gateway:
         if already_queued:
             return
         print("CONTROL manifest CRE se změnil, žádám o reload", flush=True)
-        self.control_commands.append(
-            {
-                "id": f"manifest-{digest}",
-                "type": "raw",
-                "message": {"type": "configuration-changed"},
-            }
-        )
+        self._request_reload(f"manifest-{digest}")
 
     def take_control_poll_lines(self) -> str:
         """Vybrat cekajici prikazy pro gwctl. Ctou se jen jednou."""
