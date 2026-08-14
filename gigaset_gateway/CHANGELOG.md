@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.16
+
+- Log the whole message for node events that carry no `payload`. The `sink/dev`
+  announce, which is where a node describes itself, is exactly such a message,
+  so its contents used to end up in the event file and nowhere else.
+
 ## 1.0.15
 
 - Third round of candidates for the `um01` calibration command, this time

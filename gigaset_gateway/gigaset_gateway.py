@@ -2066,9 +2066,12 @@ class Gateway:
                 device[event["sink"]] = event
             atomic_json_write(self.state_path, self.state)
         self.mqtt.publish_event(event, base)
+        # Ohlaseni uzlu (sink/dev) zadny "payload" nema, a prave v nem uzel
+        # popisuje sam sebe - bez cele zpravy by to zapadlo.
+        detail = "" if event["payload"] is not None else f" raw={text.strip()}"
         print(
             f"EVENT {key} {event['sink']}={event['payload']} "
-            f"seq={event['seq_number']} ts={event['timestamp']}",
+            f"seq={event['seq_number']} ts={event['timestamp']}{detail}",
             flush=True,
         )
 
