@@ -199,10 +199,59 @@ reference on two axes while the threshold `m*4` is 80.
 So the two-step calibration is not a quirk of the old cloud - the hardware needs
 both end positions. In `um` mode the second step really is the `cal2` command,
 but the first one is not a command at all: `0x10ab0` only reports success once
-two subsystem flags are set, and what sets them is still unknown. The likely
-candidate is the mounting geometry the phone app used to compute and the cloud
-pushed as `cfg-def=`, `cfgx=`, `cfgy=`, `cfgz=`, `cfgw=`, `cfgcrc`, `cfgclose`,
-acknowledged with `ev=cfgconfirm`.
+two subsystem flags are set, and setting them is not something you ask for -
+it happens automatically after a restart.
 
-**Calibrating an `um01` is therefore still unsolved.** Everything above is
-reproducible and useful groundwork, not a working procedure.
+## The first step is `cfgclose`, not a command
+
+`cfgclose` is the one command in the `cfg*` family that needs no arguments and
+no prior `cfgx=`/`cfgy=`/`cfgz=`/`cfgw=`/`cfgcrc` - sending it alone is enough.
+It does not write any calibration data by itself; what it does is stamp a
+marker and trigger a genuine software reset of the sensor's application MCU.
+On the next boot, the firmware notices the marker and - a few seconds later,
+without any further command - captures whatever position the sensor is
+currently in as the first reference. That is the moment to have the sensor
+already in the position that should mean *closed*.
+
+```
+CRE WARN um01-8.lua ule_command_send um01 0355594c4c cfgclose
+EVENT um01/0355594c4c res=sys
+EVENT um01/0355594c4c ev=cal1started
+EVENT um01/0355594c4c ev=cal1done
+```
+
+`recal` looks like it should be the first step - it is in the command table,
+and the node does answer it with `ev=recalrec` - but sending it alone never
+produces a calibrated reference no matter how long you wait afterwards.
+Whatever it arms only feeds a state the firmware never leaves on its own.
+
+Sending `cal2` afterwards, with the sensor moved to the position that should
+mean *open*, completes the second reference the same way it always did:
+
+```
+CRE WARN um01-8.lua ule_command_send um01 0355594c4c cal2
+EVENT um01/0355594c4c ev=cal2started
+EVENT um01/0355594c4c ev=cal2done
+```
+
+`statall` confirms both references are now distinct, not the same value
+copied into both slots as in the single-step `ws02` conversion above:
+
+```
+mx2=+5   mx3=-20,+30   mx4=80
+mx5=+42  mx6=+17,+67   mx7=80
+```
+
+**One caveat for anyone repeating this with an SWD probe attached, as
+described above:** the bootloader at the start of flash checks whether
+`SWCLK` (chip pin 25) is held high before jumping to the application, and
+enters a firmware-update mode instead if it is. A probe that is still
+connected during the reset `cfgclose` triggers can hold that pin high by
+itself, so the sensor comes back up in the wrong mode and never runs the
+calibration logic at all. Disconnect the probe - or at least the `SWCLK`
+wire - before sending `cfgclose`, and only reconnect once the sensor has
+finished rebooting.
+
+**Calibrating an `um01` works with `cfgclose` followed by `cal2`.** Everything
+above the "first step" section is still accurate background; the missing
+piece was that the first step is a side effect of a restart, not a command.

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.37
+
+- Calibrate the `um01` universal sensor, for real this time. The first step
+  is not a command at all: it is a side effect of `cfgclose`, which triggers
+  a restart of the sensor's application MCU. On the next boot the firmware
+  automatically captures whatever position the sensor is in as the *closed*
+  reference, without being asked for it. The second step is `cal2`, as
+  originally found in 1.0.34, and finally does what it always should have:
+  `mx2..mx4` and `mx5..mx7` end up distinct instead of copies of each other.
+  Verified end to end on real hardware, including a working `Opening`
+  sensor in Home Assistant. *Kalibrace 1 - zavřeno* now sends `cfgclose`
+  instead of the `cal` command the sensor ignores in this mode; *Kalibrace 2
+  - otevřeno* is unchanged. See `UM01_FIRMWARE.md` for the full story,
+  including a caveat for anyone repeating the SWD readout with a probe still
+  attached during the restart.
+- Fix the `um01`/`ws02` air pressure sensor never appearing in Home
+  Assistant. It used `device_class: atmospheric_pressure`, which older
+  Home Assistant releases do not know and silently drop from MQTT
+  discovery; switched to the long-established `pressure` class, which
+  accepts the same `hPa` unit.
+
 ## 1.0.36
 
 - Withdraw the `um01` calibration procedure released in 1.0.35. Converting the
