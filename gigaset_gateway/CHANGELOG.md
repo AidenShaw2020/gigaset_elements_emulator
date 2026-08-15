@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.34
+
+- Calibrate the `um01` universal sensor. The first step is confirmed with the
+  command `cal`, not `cal1` - that string exists in the sensor only as part of
+  event names, never as a command, which is why guessing it from the event
+  never worked. The second step is `cal2`.
+- Read the command names out of the sensor instead of guessing them. Nothing on
+  the base station contains them: it forwards the text to the node untouched.
+  `UM01_FIRMWARE.md` and `extract_um01_commands.py` document and repeat the
+  readout, so the result can be verified or applied to other node types.
+- Report the intermediate calibration states the sensor sends while a step is
+  running, so it is visible that a step was accepted and not just ignored.
+
 ## 1.0.33
 
 - Stop warning about missing firmware files when the manifest came from the

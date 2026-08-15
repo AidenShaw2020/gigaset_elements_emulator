@@ -251,7 +251,7 @@ can also be appended to the file named by `control.request_file`:
 | `reglist` | log the registered nodes |
 | `unpair` | remove a node |
 | `calibrate` / `cal_reset` | send `cal` / `recal` to a node |
-| `calibrate_step1` / `calibrate_step2` | send `cal1` / `cal2` to a `um01` node |
+| `calibrate_step1` / `calibrate_step2` | send `cal` / `cal2` to a `um01` node |
 | `endnode_command` | send the command in the request's `command` field to a node |
 | `siren_on` / `siren_off` | sound the siren |
 | `pattern_*` | play a sound pattern |
@@ -313,25 +313,35 @@ to them.
 
 ## Calibration of the universal sensor
 
-> **Not solved yet.** An `um01` reports its battery, temperature, firmware and
-> its mounting and button events, but it cannot be calibrated, and without a
-> calibration it never reports a position. If you have one, it is currently of
-> limited use.
-
 `um01` is an angle sensor that can be mounted on a window or on a door, and it
 stores two reference positions instead of one:
 
 | payload | meaning |
 |---|---|
 | `cal1req` | waiting for the *closed* position to be stored |
+| `cal1started` | first step accepted and running |
 | `cal1done` | first step accepted |
 | `cal2req` | waiting for the *open* position to be stored |
+| `cal2started` | second step accepted and running |
 | `cal2done` | calibration finished |
+| `calreused` | a stored calibration was reused |
 
-What is missing is the command that answers `cal1req`. The bundled `um01`
-library looks for it: pressing a calibration button makes it try one candidate
-per request from the sensor and log which one was sent. A single command can
-also be tried through the `endnode_command` control action.
+The commands are `cal` for the first step, `cal2` for the second and `recal` to
+discard the calibration. **`cal1` is not a command** - that string exists in the
+node only as part of event names. The same asymmetry exists on `ws02`, where the
+phone app sends `closed` but the node receives `cal`.
+
+Neither step is ever answered automatically, because each one stores the
+position the sensor is physically in:
+
+1. Mount the sensor and close the window or door.
+2. Press *Kalibrace 1 - zavreno* (`calibrate_step1`).
+3. Open the window or door fully.
+4. Press *Kalibrace 2 - otevreno* (`calibrate_step2`).
+
+The command names were read out of the node's own firmware; nothing on the base
+station contains them. [UM01_FIRMWARE.md](UM01_FIRMWARE.md) describes how, so
+the result can be verified or repeated for other node types.
 
 ## Siren
 

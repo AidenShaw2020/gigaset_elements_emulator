@@ -21,9 +21,10 @@ ENDNODE_TYPE_RE = re.compile(r"^[a-z]{2}[0-9]{2}$")
 BASE_IDENTITY_RE = re.compile(r"^[0-9a-f]{16,64}$")
 # Prikazy, ktere ULE koncovy uzel skutecne zna.  "moving" a "closed" ze
 # SensorCommand v puvodni aplikaci jsou stavy cloud API a zadny senzor na ne
-# nereaguje, proto tu nejsou.  "cal1" a "cal2" jsou naopak dva kroky kalibrace
-# univerzalniho senzoru um01, ktery si o ne sam rika udalostmi cal1req/cal2req.
-SAFE_ENDNODE_COMMANDS = {"cal", "cal1", "cal2", "recal", "verreq"}
+# nereaguje, proto tu nejsou.  Univerzalni senzor um01 kalibruje dvema kroky:
+# prvni potvrzuje "cal", druhy "cal2".  Retezec "cal1" ve firmwaru uzlu jako
+# prikaz NEEXISTUJE, je jen soucasti nazvu udalosti cal1req/cal1done.
+SAFE_ENDNODE_COMMANDS = {"cal", "cal2", "recal", "verreq"}
 
 # Popisky typu zarizeni pro Home Assistant.
 DEVICE_NAMES = {
@@ -55,9 +56,12 @@ CALIBRATION_STATES = {
     "calreq": "required",
     "caldone": "ok",
     "cal1req": "step1_required",
+    "cal1started": "step1_running",
     "cal1done": "step1_done",
     "cal2req": "step2_required",
+    "cal2started": "step2_running",
     "cal2done": "ok",
+    "calreused": "ok",
 }
 CALIBRATION_OPTIONS = sorted(set(CALIBRATION_STATES.values()))
 
@@ -247,13 +251,13 @@ CONTROL_ACTIONS = {
     # Univerzalni senzor um01 kalibruje dvema kroky a sam si o ne rika
     # udalostmi "cal1req" a "cal2req".  Automaticky se neodpovida: prvni krok
     # ulozi zavrenou polohu, druhy otevrenou, takze mezi nimi musi uzivatel
-    # senzor fyzicky prestavit.
-    "calibrate_step1": ("endnode", lambda _device_id: "cal1"),
+    # senzor fyzicky prestavit.  Prvni krok se potvrzuje prikazem "cal", stejne
+    # jako u ws02 - viz UM01_FIRMWARE.md.
+    "calibrate_step1": ("endnode", lambda _device_id: "cal"),
     "calibrate_step2": ("endnode", lambda _device_id: "cal2"),
     # Libovolny prikaz pro uzel, zadany v souboru s pozadavky polozkou
-    # "command".  Slovnik ULE prikazu neni nikde popsany a v binarkach zakladny
-    # nejsou zadne jeho retezce - jsou az ve firmwaru uzlu - takze jedina cesta,
-    # jak novy prikaz overit, je zkusit ho.
+    # "command".  Slovnik ULE prikazu neni v binarkach zakladny - ta text jen
+    # prepolsi - ale pro um01 je vycteny z firmwaru uzlu, viz UM01_FIRMWARE.md.
     "endnode_command": ("endnode", lambda _device_id: ""),
     # Rucni ovladani sireny.  Jde primo na uzel stejnym prikazem, jaky posila
     # firmware v is01.on_unmanaged / off_unmanaged, tedy s obejitim
