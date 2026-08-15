@@ -313,35 +313,23 @@ to them.
 
 ## Calibration of the universal sensor
 
-An `um01` ships as a *umos* universal sensor and calibrates in two steps that
-the original cloud drove. Without that cloud it asks for the first step forever.
-There is no command that answers it: the sensor's own firmware only accepts
-`cal` when it is **not** configured as `um`.
+> **Not solved.** An `um01` reports its battery, temperature, air pressure,
+> firmware and its mounting and button events, but it cannot be calibrated, and
+> without a calibration it never reports a position.
 
-The fix is to reconfigure it as an ordinary window sensor, after which it
-calibrates itself in a single step like any `ws02`:
+An `um01` ships as a *umos* sensor and calibrates in two steps that the original
+cloud drove. Without that cloud it asks for the first step forever, and there is
+no command that answers it - the sensor's own firmware only accepts `cal` when it
+is **not** configured as `um`.
 
-```json
-{ "requests": [
-  { "id": "um01-to-ws02-a", "action": "endnode_command",
-    "device_type": "um01", "device_id": "<id>", "command": "nvm=0e-7773" } ] }
-```
+Reconfiguring it as a window sensor does make it calibrate, but it then reports
+no position either: the hardware keeps two reference positions per axis and the
+single-step `cal` writes the same value into both, leaving an empty range. The
+two-step calibration exists because this hardware needs both end positions.
 
-then, with a fresh id, `nvm=0f-3032`. Pull the battery for a few seconds; the
-node comes back as `ws02`, asks for calibration once and the bundled `ws02`
-library answers it.
-
-The two writes set the two configuration items that hold the device type -
-`0x0e` is `"ws"` and `0x0f` is `"02"`. Writing `nvm=0e-756d` and `nvm=0f-3031`
-puts it back.
-
-Nothing is lost by the conversion. The node keeps reporting contact, position
-and tilt, and on top of that temperature and air pressure, which a real `ws02`
-does not have. Both are only sent when asked with `temp` and `press`; the
-bundled library asks once an hour.
-
-[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how this was found, so it can be
-verified or repeated for other node types.
+[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how far this got, including how to
+read the sensor's firmware, the command table recovered from it and where the
+remaining gate sits.
 
 ## Siren
 
