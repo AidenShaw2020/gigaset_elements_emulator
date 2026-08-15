@@ -5,8 +5,8 @@ its original firmware and simply talks to this add-on instead of
 `api-bs.gigaset-elements.de`.
 
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
-(door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes. The `um01`
-universal sensor is work in progress - see *Calibration*.
+(door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes, as well as
+the `um01` universal sensor.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -120,7 +120,6 @@ Every paired node appears through MQTT discovery, grouped under the base:
 
 - window / door: contact, tilt, position, calibration state, battery
 - universal sensor: contact, position, calibration state, temperature, battery
-  (calibration itself does not work yet, see below)
 - motion: motion sensor with a configurable off delay
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
@@ -169,11 +168,9 @@ automatically, because each step records the position it is physically in:
 
 The *Calibration* entity shows which step the sensor is waiting for.
 
-**This does not work yet.** The command that answers the sensor's request is
-not known, and pressing a calibration button starts a search for it - the
-library tries one candidate per request from the sensor and logs each one.
-Until this is solved an `um01` reports its battery, temperature, firmware and
-its mounting and button events, but no position.
+The two steps are confirmed with the ULE commands `cal` and `cal2`. Those names
+do not appear anywhere on the base station - they were read out of the sensor's
+own firmware, which is described in `UM01_FIRMWARE.md` in the repository.
 
 ## Troubleshooting
 

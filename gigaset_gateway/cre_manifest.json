@@ -28,7 +28,7 @@
     "time_helper": "/api/v1/bs01/configuration/libs/time_helper/time_helper-8.lua",
     "ts01": "/api/v1/bs01/configuration/libs/ts01/ts01-133.lua",
     "ts01_runtime_configuration": "/api/v1/bs01/configuration/libs/ts01_runtime_configuration/ts01_runtime_configuration-129.lua",
-    "um01": "/api/v1/bs01/configuration/libs/um01/um01-7.lua",
+    "um01": "/api/v1/bs01/configuration/libs/um01/um01-8.lua",
     "wd01": "/api/v1/bs01/configuration/libs/wd01/wd01-1.lua",
     "ws02": "/api/v1/bs01/configuration/libs/ws02/ws02-14.lua"
   },
