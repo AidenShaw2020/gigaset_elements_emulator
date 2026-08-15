@@ -47,9 +47,13 @@ and `PF1`; on this QFN32 package that is:
 > most likely mistake and it costs hours.
 
 Ground and 3.3 V can be taken from pads 3 and 4 of that row on the underside;
-remove the battery first so the two supplies cannot fight.
+remove the battery first so the two supplies cannot fight. `SWCLK`, `SWDIO` and
+`RESETn` are reachable from vias on the underside that lead to chip pins 25, 26
+and 9, which is easier to solder than the 0.5 mm pitch of the package itself.
 
-Wire colours used in the original work, for reference:
+![Wiring used to read the sensor](docs/um01_swd_wiring.jpg)
+
+Wire colours in the photo:
 
 | colour | signal |
 |---|---|
