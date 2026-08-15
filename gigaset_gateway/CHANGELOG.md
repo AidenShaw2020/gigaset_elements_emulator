@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.39
+
+- Fix `log_heartbeats` doing nothing. The 1.0.38 option was added to the
+  schema and read by `gigaset_gateway.py`, but `run.sh` builds the runtime
+  config from the add-on options field by field, and the line that carries
+  `log_heartbeats` through was never added - every other option that changed
+  around the same time made it in, this one didn't. The Python side always
+  saw the default (`true`) regardless of what the toggle in the UI said, so
+  turning it off had no effect. `run.sh` now passes it through like every
+  other option.
+
 ## 1.0.38
 
 - Add `log_heartbeats` (default on, matching the previous behaviour). The

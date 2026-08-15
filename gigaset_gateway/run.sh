@@ -178,6 +178,7 @@ jq -n \
         dns_server: false,
         ntp_server: false,
         log_headers: $options.log_requests,
+        log_heartbeats: $options.log_heartbeats,
         event_stream_seconds: 1,
         event_keepalive_seconds: 2,
         cloud_heartbeat_tick: 60,
