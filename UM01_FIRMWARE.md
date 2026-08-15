@@ -143,11 +143,44 @@ ev=prealert  ev=forcedentry  ev=drillalert  ev=recalrec
 
 ## The result
 
-The first calibration step is confirmed with **`cal`**, the second with
-**`cal2`**, and `recal` discards the calibration.
+The sensor ships configured as a *umos* universal sensor. In that mode it runs a
+two-step calibration that the cloud used to drive, and it **ignores the `cal`
+command entirely**: the handler is reached only when the configured type is not
+`um`, as the guard at `0x1280c` compares the type against the constant `0x756d`
+= `"um"` and the caller skips the whole branch when it matches. That is why
+guessing a `cal1` command never worked - no such command exists.
 
-The string `cal1` exists in the firmware only inside event and state names
-(`ev=cal1req`, `ev=cal1started`, `cal=cal1done`). **As a command it does not
-exist**, which is why guessing it from the event name never worked. The same
-asymmetry exists on `ws02`, where the phone app sends `closed` but the node
-receives `cal`.
+The device type is two configuration items:
+
+| item | meaning | factory value |
+|---|---|---|
+| `0x0e` | first two characters of the type | `um` (`0x756d`) |
+| `0x0f` | last two characters of the type | `01` (`0x3031`) |
+
+They are written with `nvm=<2 hex digits item>-<4 hex digits value>`; the node
+answers `nvm=nv0e-cnf`. Writing both turns the sensor into an ordinary window
+sensor, which calibrates itself in a single step like any `ws02`:
+
+```
+nvm=0e-7773      ; "ws"
+nvm=0f-3032      ; "02"
+```
+
+The new type is only read at start-up, so the node has to be restarted
+afterwards - pulling the battery for a few seconds is enough. It then announces
+itself as `ws02`, asks for calibration once with `ev=calreq`, and the bundled
+`ws02` library answers `cal`:
+
+```
+EVENT ws02/0355594c4c ev=calreq
+CRE WARN ws02-15.lua ws02 ule_command_send 0355594c4c cal
+EVENT ws02/0355594c4c ev=cal1started
+EVENT ws02/0355594c4c ev=caldone
+```
+
+To go back, write `nvm=0e-756d` and `nvm=0f-3031`.
+
+The hardware keeps everything it had: besides contact, position and tilt it also
+reports temperature and air pressure, which no real `ws02` has. Neither is sent
+unprompted - the `temp` and `press` commands ask for them, and the bundled
+library does so once an hour.

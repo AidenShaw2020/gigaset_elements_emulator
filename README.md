@@ -313,35 +313,35 @@ to them.
 
 ## Calibration of the universal sensor
 
-`um01` is an angle sensor that can be mounted on a window or on a door, and it
-stores two reference positions instead of one:
+An `um01` ships as a *umos* universal sensor and calibrates in two steps that
+the original cloud drove. Without that cloud it asks for the first step forever.
+There is no command that answers it: the sensor's own firmware only accepts
+`cal` when it is **not** configured as `um`.
 
-| payload | meaning |
-|---|---|
-| `cal1req` | waiting for the *closed* position to be stored |
-| `cal1started` | first step accepted and running |
-| `cal1done` | first step accepted |
-| `cal2req` | waiting for the *open* position to be stored |
-| `cal2started` | second step accepted and running |
-| `cal2done` | calibration finished |
-| `calreused` | a stored calibration was reused |
+The fix is to reconfigure it as an ordinary window sensor, after which it
+calibrates itself in a single step like any `ws02`:
 
-The commands are `cal` for the first step, `cal2` for the second and `recal` to
-discard the calibration. **`cal1` is not a command** - that string exists in the
-node only as part of event names. The same asymmetry exists on `ws02`, where the
-phone app sends `closed` but the node receives `cal`.
+```json
+{ "requests": [
+  { "id": "um01-to-ws02-a", "action": "endnode_command",
+    "device_type": "um01", "device_id": "<id>", "command": "nvm=0e-7773" } ] }
+```
 
-Neither step is ever answered automatically, because each one stores the
-position the sensor is physically in:
+then, with a fresh id, `nvm=0f-3032`. Pull the battery for a few seconds; the
+node comes back as `ws02`, asks for calibration once and the bundled `ws02`
+library answers it.
 
-1. Mount the sensor and close the window or door.
-2. Press *Kalibrace 1 - zavreno* (`calibrate_step1`).
-3. Open the window or door fully.
-4. Press *Kalibrace 2 - otevreno* (`calibrate_step2`).
+The two writes set the two configuration items that hold the device type -
+`0x0e` is `"ws"` and `0x0f` is `"02"`. Writing `nvm=0e-756d` and `nvm=0f-3031`
+puts it back.
 
-The command names were read out of the node's own firmware; nothing on the base
-station contains them. [UM01_FIRMWARE.md](UM01_FIRMWARE.md) describes how, so
-the result can be verified or repeated for other node types.
+Nothing is lost by the conversion. The node keeps reporting contact, position
+and tilt, and on top of that temperature and air pressure, which a real `ws02`
+does not have. Both are only sent when asked with `temp` and `press`; the
+bundled library asks once an hour.
+
+[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how this was found, so it can be
+verified or repeated for other node types.
 
 ## Siren
 

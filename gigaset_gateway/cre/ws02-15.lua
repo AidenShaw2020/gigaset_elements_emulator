@@ -11,9 +11,15 @@
 -- Prikazy do senzoru:
 --   cal    - soucasnou polohu si zapamatuj jako "zavreno" (odpovi caldone)
 --   recal  - zahod soucasnou kalibraci
+--   temp   - hlas teplotu (odpovi "temp=+25.4/+23.5")
+--   press  - hlas tlak (odpovi "press=995.088162")
 -- POZOR: prikaz se MUSI posilat pres ule_command_send.  Zapis na JBus tema
 -- ulecontrol (to dela i stock /usr/bin/calibrate.sh) UleApp zahodi, protoze
 -- propousti jen prikazy ze sve vlastni tabulky (regon/regoff/reglist/delete).
+--
+-- Teplotu a tlak umi jen uzly postavene na um01 (viz UM01_FIRMWARE.md), a to
+-- jen na vyzadani - sami je nikdy neposlou.  Uzel, ktery je neumi, prikaz
+-- ignoruje.
 
 local ws02 = {}
 
@@ -31,8 +37,15 @@ local BACKOFF_DELAY = 3600
 -- prokazatelne vzhuru a ma otevrene prijimaci okno.
 local ARM_PREFIX = "/tmp/gwarm."
 
+-- Jak casto si rict o teplotu a tlak.  Uzel bezi na baterii, takze radeji
+-- zridka - v mistnosti se stejne nic rychleho nedeje.
+local MEASURE_INTERVAL = 3600
+
 -- devId -> { last = cas posledniho pokusu, tries = pocet pokusu bez caldone }
 local state = {}
+
+-- devId -> cas posledniho dotazu na teplotu a tlak
+local measured = {}
 
 local function entry(devId)
     local item = state[devId]
@@ -68,6 +81,17 @@ function ws02.calibrate(devId)
     ws02.execute_ule_command(devId, "cal")
 end
 
+-- Uzel je prave vzhuru, takze je to jedina chvile, kdy ma smysl se ptat.
+local function measure(devId)
+    local now = os.time()
+    if measured[devId] ~= nil and now - measured[devId] < MEASURE_INTERVAL then
+        return
+    end
+    measured[devId] = now
+    ws02.execute_ule_command(devId, "temp")
+    ws02.execute_ule_command(devId, "press")
+end
+
 function ws02.on_ule_event(devType, devId, url, payload)
     if devType ~= DEV_TYPE then
         return
@@ -100,7 +124,9 @@ function ws02.on_ule_event(devType, devId, url, payload)
         return
     end
 
+    -- Dokud uzel zada o kalibraci, nema smysl ho zatezovat merenim.
     if value ~= "calreq" then
+        measure(devId)
         return
     end
 
