@@ -8,8 +8,8 @@ Runs either as a **Home Assistant add-on** or as a plain Python script.
 
 Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
 with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
-(button) and `is01` (siren). The `um01` universal sensor is **work in
-progress**: everything but its calibration works, see below.
+(button), `is01` (siren) and `um01` (universal sensor, including its
+two-step calibration - see below).
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -223,7 +223,7 @@ base station.
 | node | entities |
 |---|---|
 | `ws02`, `ds02` | contact, tilt, position, calibration state, battery, calibrate / reset calibration buttons |
-| `um01` | contact, position, calibration state, temperature, battery, two calibration step buttons and a reset calibration button - **calibration does not work yet** |
+| `um01` | contact, position, calibration state, temperature, air pressure, battery, two calibration step buttons and a reset calibration button |
 | `ps02` | motion with a configurable off delay, battery |
 | `bn01` | device triggers and an `event` entity, battery |
 | `is01` | siren on/off, sound pattern selector |
@@ -251,7 +251,7 @@ can also be appended to the file named by `control.request_file`:
 | `reglist` | log the registered nodes |
 | `unpair` | remove a node |
 | `calibrate` / `cal_reset` | send `cal` / `recal` to a node |
-| `calibrate_step1` / `calibrate_step2` | send `cal` / `cal2` to a `um01` node |
+| `calibrate_step1` / `calibrate_step2` | send `cfgclose` / `cal2` to a `um01` node |
 | `endnode_command` | send the command in the request's `command` field to a node |
 | `siren_on` / `siren_off` | sound the siren |
 | `pattern_*` | play a sound pattern |
@@ -313,23 +313,33 @@ to them.
 
 ## Calibration of the universal sensor
 
-> **Not solved.** An `um01` reports its battery, temperature, air pressure,
-> firmware and its mounting and button events, but it cannot be calibrated, and
-> without a calibration it never reports a position.
+An `um01` ships as a *umos* sensor and calibrates in two steps that only the
+original cloud used to drive. Neither step is the `cal` command a window
+sensor uses - the sensor's own firmware ignores `cal` entirely while it is
+configured as `um`, which is why guessing a step from the event names never
+worked.
 
-An `um01` ships as a *umos* sensor and calibrates in two steps that the original
-cloud drove. Without that cloud it asks for the first step forever, and there is
-no command that answers it - the sensor's own firmware only accepts `cal` when it
-is **not** configured as `um`.
+| payload | meaning |
+|---|---|
+| `cal1req` / `cal2req` | the sensor is asking for the first / second step |
+| `cal1done` / `cal2done` | that step succeeded |
+| `open` / `close` / `tilt` / `preopen` | position, only reported after both steps |
 
-Reconfiguring it as a window sensor does make it calibrate, but it then reports
-no position either: the hardware keeps two reference positions per axis and the
-single-step `cal` writes the same value into both, leaving an empty range. The
-two-step calibration exists because this hardware needs both end positions.
+The first step is a side effect of `cfgclose`, not a command that answers a
+request: it restarts the sensor, and the restarted firmware captures whatever
+position it is in as the *closed* reference on its own, a few seconds later.
+The second step is the familiar `cal2`:
 
-[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how far this got, including how to
-read the sensor's firmware, the command table recovered from it and where the
-remaining gate sits.
+1. Put the sensor in the position that should mean *closed*.
+2. Queue a `calibrate_step1` request (`cfgclose`) and wake the sensor with its
+   button. It restarts and reports `ev=cal1started` / `ev=cal1done`.
+3. Move the sensor to the position that should mean *open*.
+4. Queue a `calibrate_step2` request (`cal2`) and wake the sensor again.
+
+[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how this was found, including
+how to read the sensor's firmware and the command table recovered from it -
+and a caveat for anyone repeating the readout with a debug probe still
+attached during the restart.
 
 ## Siren
 

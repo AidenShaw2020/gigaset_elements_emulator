@@ -119,7 +119,8 @@ directory, so the base does not have to re-request a signature after a restart.
 Every paired node appears through MQTT discovery, grouped under the base:
 
 - window / door: contact, tilt, position, calibration state, battery
-- universal sensor: contact, position, calibration state, temperature, battery
+- universal sensor: contact, position, calibration state, temperature, air
+  pressure, battery
 - motion: motion sensor with a configurable off delay
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
@@ -137,7 +138,7 @@ can also be appended to `/share/gigaset/control.json`:
     { "id": "pair-01", "action": "pair_start" },
     { "id": "cal-01", "action": "cal_reset",
       "device_type": "ws02", "device_id": "025bcab723" },
-    { "id": "raw-01", "action": "endnode_command", "command": "cal",
+    { "id": "raw-01", "action": "endnode_command", "command": "cfgclose",
       "device_type": "um01", "device_id": "0355594c4c" }
   ]
 }
@@ -158,15 +159,19 @@ To force a recalibration:
 4. The sensor starts asking for calibration and the bundled library answers
    automatically; the current position becomes *closed*.
 
-The universal sensor `um01` ships as a *umos* sensor and calibrates in two steps
-that the original cloud drove, so on its own it asks for the first step forever.
-**This is not solved yet.** Converting it into a window sensor makes it finish a
-calibration, but it then reports no position, because the hardware stores two
-reference positions and a single-step calibration fills both with the same one.
+The universal sensor `um01` ships as a *umos* sensor and calibrates in two
+steps that only the original cloud used to drive. Neither step is triggered
+by *Zrušit kalibraci* the way a window sensor's is:
 
-Until this is solved an `um01` reports its battery, temperature, air pressure,
-firmware and its mounting and button events, but no position.
-`UM01_FIRMWARE.md` in the repository describes how far the analysis got.
+1. Put the sensor in the position that should mean *closed*.
+2. Press *Kalibrace 1 - zavřeno* (`calibrate_step1`). This sends `cfgclose`,
+   which restarts the sensor; on the next boot it captures the current
+   position on its own, without waiting for a further command.
+3. Move the sensor to the position that should mean *open*.
+4. Press *Kalibrace 2 - otevřeno* (`calibrate_step2`, `cal2`).
+
+`UM01_FIRMWARE.md` in the repository has the full explanation, including why
+guessing `cal` (what a window sensor uses) never works here.
 
 ## Troubleshooting
 

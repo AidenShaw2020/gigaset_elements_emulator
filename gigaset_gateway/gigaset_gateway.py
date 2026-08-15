@@ -253,11 +253,14 @@ CONTROL_ACTIONS = {
     "calibrate": ("endnode", lambda _device_id: "cal"),
     "cal_reset": ("endnode", lambda _device_id: "recal"),
     # Univerzalni senzor um01 kalibruje dvema kroky a sam si o ne rika
-    # udalostmi "cal1req" a "cal2req".  Automaticky se neodpovida: prvni krok
-    # ulozi zavrenou polohu, druhy otevrenou, takze mezi nimi musi uzivatel
-    # senzor fyzicky prestavit.  Prvni krok se potvrzuje prikazem "cal", stejne
-    # jako u ws02 - viz UM01_FIRMWARE.md.
-    "calibrate_step1": ("endnode", lambda _device_id: "cal"),
+    # udalostmi "cal1req" a "cal2req", ale v tomhle rezimu prikaz "cal"
+    # ignoruje uplne - firmware ho zahodi uz podle typu senzoru, driv nez by
+    # se vubec podival, jestli nejaky "calreq" probihal (viz UM01_FIRMWARE.md).
+    # Prvni krok proto neni prikaz kalibrace, ale "cfgclose": ten vyvola na
+    # senzoru restart, po kterem si sam ulozi aktualni polohu jako zavrenou.
+    # Druhy krok je "cal2", ktery ulozi otevrenou polohu - mezi kroky musi
+    # uzivatel senzor fyzicky prestavit.
+    "calibrate_step1": ("endnode", lambda _device_id: "cfgclose"),
     "calibrate_step2": ("endnode", lambda _device_id: "cal2"),
     # Libovolny prikaz pro uzel, zadany v souboru s pozadavky polozkou
     # "command".  Slovnik ULE prikazu neni v binarkach zakladny - ta text jen
@@ -1344,7 +1347,7 @@ class MqttBridge:
             {
                 **common,
                 "name": "Pressure",
-                "device_class": "atmospheric_pressure",
+                "device_class": "pressure",
                 "state_class": "measurement",
                 "unit_of_measurement": "hPa",
                 "state_topic": f"{root}/pressure",
