@@ -160,13 +160,13 @@ To force a recalibration:
 
 The universal sensor `um01` ships as a *umos* sensor and calibrates in two steps
 that the original cloud drove, so on its own it asks for the first step forever.
-Convert it into an ordinary window sensor instead - send `nvm=0e-7773` and then
-`nvm=0f-3032` with the *endnode_command* action, pull its battery for a few
-seconds, and it comes back as `ws02` and calibrates itself.
+**This is not solved yet.** Converting it into a window sensor makes it finish a
+calibration, but it then reports no position, because the hardware stores two
+reference positions and a single-step calibration fills both with the same one.
 
-It keeps everything it had and adds temperature and air pressure, which a real
-`ws02` does not report. `UM01_FIRMWARE.md` in the repository explains where the
-procedure comes from.
+Until this is solved an `um01` reports its battery, temperature, air pressure,
+firmware and its mounting and button events, but no position.
+`UM01_FIRMWARE.md` in the repository describes how far the analysis got.
 
 ## Troubleshooting
 

@@ -178,9 +178,31 @@ EVENT ws02/0355594c4c ev=cal1started
 EVENT ws02/0355594c4c ev=caldone
 ```
 
-To go back, write `nvm=0e-756d` and `nvm=0f-3031`.
+To go back, write `nvm=0e-756d` and `nvm=0f-3031` and restart the node again.
 
-The hardware keeps everything it had: besides contact, position and tilt it also
-reports temperature and air pressure, which no real `ws02` has. Neither is sent
-unprompted - the `temp` and `press` commands ask for them, and the bundled
-library does so once an hour.
+## Why that is not the whole answer
+
+The conversion finishes the calibration but the sensor still never reports a
+position, and `statall` shows why. There are **two** sets of reference values per
+axis, `m*2,m*3,m*4` and `m*5,m*6,m*7`, and the single-step `cal` writes the same
+value into both:
+
+```
+mx2=-181  mx3=-206,-156  mx4=80
+mx5=-181  mx6=-206,-156  mx7=80
+```
+
+With an empty range between them nothing can ever be classified as open. The
+movement is not the problem: measured live values were 470 and 333 away from the
+reference on two axes while the threshold `m*4` is 80.
+
+So the two-step calibration is not a quirk of the old cloud - the hardware needs
+both end positions. In `um` mode the second step really is the `cal2` command,
+but the first one is not a command at all: `0x10ab0` only reports success once
+two subsystem flags are set, and what sets them is still unknown. The likely
+candidate is the mounting geometry the phone app used to compute and the cloud
+pushed as `cfg-def=`, `cfgx=`, `cfgy=`, `cfgz=`, `cfgw=`, `cfgcrc`, `cfgclose`,
+acknowledged with `ev=cfgconfirm`.
+
+**Calibrating an `um01` is therefore still unsolved.** Everything above is
+reproducible and useful groundwork, not a working procedure.

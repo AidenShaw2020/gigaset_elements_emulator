@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.36
+
+- Withdraw the `um01` calibration procedure released in 1.0.35. Converting the
+  sensor into a window sensor does finish a calibration, but the sensor then
+  reports no position at all: it keeps two reference positions per axis and a
+  single-step calibration writes the same one into both, so nothing can ever be
+  classified as open. Calibrating an `um01` is unsolved again; what was learned
+  is written down instead of being presented as a working procedure.
+- Keep the temperature, the air pressure and the `preopen` position from 1.0.35 -
+  those work regardless.
+
 ## 1.0.35
 
 - Make the `um01` universal sensor usable. It ships as a *umos* sensor whose
