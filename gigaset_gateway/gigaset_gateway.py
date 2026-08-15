@@ -37,9 +37,10 @@ DEVICE_NAMES = {
 }
 
 # Typy, ktere hlasi polohu, a jejich slovnik.  "tilt" je sklopene okno; chodi
-# stejne jako open/close az po uspesne kalibraci.
+# stejne jako open/close az po uspesne kalibraci.  "preopen" hlasi jen uzly
+# postavene na um01 a znamena pootevreno.
 POSITION_TYPES = {"ws02", "ds02", "um01"}
-POSITION_PAYLOADS = {"open", "close", "tilt"}
+POSITION_PAYLOADS = {"open", "close", "tilt", "preopen"}
 
 # Nazev a trida kontaktni entity podle typu uzlu.  um01 je univerzalni senzor,
 # ktery se lepi na dvere i na okno, takze se hlasi obecnou tridou "opening".
@@ -68,7 +69,10 @@ CALIBRATION_OPTIONS = sorted(set(CALIBRATION_STATES.values()))
 # Sinky, pod kterymi uzel hlasi teplotu.  Stejne nazvy pouzivaji i uzly, ktere
 # zadnou teplotu neposilaji (ws02 pod "state" posila treba "calreq"), takze o
 # tom, jestli o teplotu jde, rozhoduje az tvar hodnoty.
-TEMPERATURE_SINKS = {"tp", "state"}
+TEMPERATURE_SINKS = {"tp", "state", "temp"}
+
+# Tlak hlasi jen univerzalni senzor, a to jen na vyzadani prikazem "press".
+PRESSURE_SINK = "press"
 
 # Zvukove vzory sireny is01, mapovane na ULE prikaz.  Format je
 # "<celkova doba>,<sekvence>", kde sekvence strida delku tonu a ticha;
@@ -600,11 +604,16 @@ def control_poll_line(request: dict[str, str]) -> str:
 def temperature_from_payload(sink: str, payload: str) -> float | None:
     """Teplota ve stupnich Celsia, nebo None, kdyz hodnota teplotou neni.
 
-    Uzel ji hlasi ve dvou tvarech: pod "tp" jako prvni polozku seznamu
+    Uzel ji hlasi ve trech tvarech: pod "tp" jako prvni polozku seznamu
     oddeleneho carkami, pod "state" jako druhou ze ctyr polozek oddelenych
-    strednikem.  Obe jsou v desetinach stupne, jen v prvnim pripade bezne i s
-    desetinnou teckou.
+    strednikem - obe v desetinach stupne - a pod "temp" jako dve hodnoty
+    oddelene lomitkem, uz ve stupnich.
     """
+    if sink == "temp":
+        try:
+            return float(payload.split("/")[0])
+        except ValueError:
+            return None
     if sink == "tp":
         field = payload.split(",")[0]
     else:
@@ -614,6 +623,14 @@ def temperature_from_payload(sink: str, payload: str) -> float | None:
         field = parts[1]
     try:
         return int(field.strip().replace(".", "")) / 10
+    except ValueError:
+        return None
+
+
+def pressure_from_payload(payload: str) -> float | None:
+    """Tlak v hektopascalech, nebo None, kdyz hodnota tlakem neni."""
+    try:
+        return float(payload)
     except ValueError:
         return None
 
@@ -1317,6 +1334,24 @@ class MqttBridge:
             },
         )
 
+    def _pressure(
+        self, root: str, object_id: str, common: dict[str, Any], hpa: float
+    ) -> None:
+        self.publish(f"{root}/pressure", f"{hpa:.1f}")
+        self.discovery(
+            "sensor",
+            object_id + "_pressure",
+            {
+                **common,
+                "name": "Pressure",
+                "device_class": "atmospheric_pressure",
+                "state_class": "measurement",
+                "unit_of_measurement": "hPa",
+                "state_topic": f"{root}/pressure",
+                "unique_id": object_id + "_pressure",
+            },
+        )
+
     def _siren_patterns(
         self, root: str, object_id: str, common: dict[str, Any], version: str
     ) -> None:
@@ -1541,6 +1576,12 @@ class MqttBridge:
             celsius = temperature_from_payload(sink, payload)
             if celsius is not None:
                 self._temperature(root, object_id, common, celsius)
+                return
+
+        if sink == PRESSURE_SINK:
+            hpa = pressure_from_payload(payload)
+            if hpa is not None:
+                self._pressure(root, object_id, common, hpa)
                 return
 
         if payload == "deleted":

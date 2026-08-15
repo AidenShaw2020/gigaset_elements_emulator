@@ -158,19 +158,15 @@ To force a recalibration:
 4. The sensor starts asking for calibration and the bundled library answers
    automatically; the current position becomes *closed*.
 
-The universal sensor `um01` stores two positions and is never calibrated
-automatically, because each step records the position it is physically in:
+The universal sensor `um01` ships as a *umos* sensor and calibrates in two steps
+that the original cloud drove, so on its own it asks for the first step forever.
+Convert it into an ordinary window sensor instead - send `nvm=0e-7773` and then
+`nvm=0f-3032` with the *endnode_command* action, pull its battery for a few
+seconds, and it comes back as `ws02` and calibrates itself.
 
-1. Mount the sensor and close the window or door.
-2. Press *Kalibrace 1 - zavreno*.
-3. Open the window or door fully.
-4. Press *Kalibrace 2 - otevreno*.
-
-The *Calibration* entity shows which step the sensor is waiting for.
-
-The two steps are confirmed with the ULE commands `cal` and `cal2`. Those names
-do not appear anywhere on the base station - they were read out of the sensor's
-own firmware, which is described in `UM01_FIRMWARE.md` in the repository.
+It keeps everything it had and adds temperature and air pressure, which a real
+`ws02` does not report. `UM01_FIRMWARE.md` in the repository explains where the
+procedure comes from.
 
 ## Troubleshooting
 

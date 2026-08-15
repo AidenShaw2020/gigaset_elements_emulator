@@ -30,7 +30,7 @@
     "ts01_runtime_configuration": "/api/v1/bs01/configuration/libs/ts01_runtime_configuration/ts01_runtime_configuration-129.lua",
     "um01": "/api/v1/bs01/configuration/libs/um01/um01-8.lua",
     "wd01": "/api/v1/bs01/configuration/libs/wd01/wd01-1.lua",
-    "ws02": "/api/v1/bs01/configuration/libs/ws02/ws02-14.lua"
+    "ws02": "/api/v1/bs01/configuration/libs/ws02/ws02-15.lua"
   },
   "internal_rules": {
     "internal_rule_automatic_firmware_update_recipe-174205838": "/api/v1/bs01/configuration/rules/174205838/internal_rule_automatic_firmware_update_recipe-174205838-4.lua",

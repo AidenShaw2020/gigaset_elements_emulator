@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.35
+
+- Make the `um01` universal sensor usable. It ships as a *umos* sensor whose
+  two-step calibration only the original cloud could drive, and its firmware
+  ignores `cal` while it is configured that way. Reconfiguring it as a window
+  sensor with `nvm=0e-7773` and `nvm=0f-3032` makes it calibrate itself in one
+  step like any `ws02`. Verified on real hardware.
+- Report the temperature and the air pressure the sensor measures. Neither is
+  ever sent unprompted, so the window library asks for both once an hour.
+- Report `preopen`, the intermediate position only this hardware knows.
+
 ## 1.0.34
 
 - Calibrate the `um01` universal sensor. The first step is confirmed with the
