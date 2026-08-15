@@ -1,5 +1,5 @@
 name: Gigaset elements local gateway
-version: "1.0.37"
+version: "1.0.38"
 slug: gigaset_gateway
 description: >-
   Local replacement for the Gigaset elements cloud. Keeps the original base
@@ -40,6 +40,7 @@ options:
   timezone_name: Europe/Prague
   firmware_cre_dir: /share/gigaset/cre
   log_requests: false
+  log_heartbeats: true
 schema:
   gateway_address: str?
   base_id: str?
@@ -63,3 +64,4 @@ schema:
   timezone_name: str
   firmware_cre_dir: str
   log_requests: bool
+  log_heartbeats: bool

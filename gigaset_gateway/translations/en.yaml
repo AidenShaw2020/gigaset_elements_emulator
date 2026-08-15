@@ -81,3 +81,9 @@ configuration:
   log_requests:
     name: Log request headers
     description: Verbose logging for debugging only.
+  log_heartbeats:
+    name: Log heartbeats
+    description: >-
+      Log an EVENT HEARTBEAT line for every idle cloud long-poll (roughly
+      every 20 seconds per connection). Turn off to cut most of the log
+      volume on an otherwise idle base.

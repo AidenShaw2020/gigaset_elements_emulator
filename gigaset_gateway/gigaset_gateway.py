@@ -2505,7 +2505,7 @@ def handle_connection(
                         + json.dumps(response_event, separators=(",", ":")),
                         flush=True,
                     )
-                else:
+                elif gateway.config.get("log_heartbeats", True):
                     print(
                         f"EVENT HEARTBEAT {peer[0]} tick={heartbeat_tick}",
                         flush=True,

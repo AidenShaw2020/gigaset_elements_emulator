@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.38
+
+- Add `log_heartbeats` (default on, matching the previous behaviour). The
+  base station keeps a long-poll connection open for cloud events and every
+  empty poll - roughly every 20 seconds, per connection - logged an `EVENT
+  HEARTBEAT` line whether or not anything was happening. Turn it off to cut
+  most of the log volume on an otherwise idle base.
+
 ## 1.0.37
 
 - Calibrate the `um01` universal sensor, for real this time. The first step

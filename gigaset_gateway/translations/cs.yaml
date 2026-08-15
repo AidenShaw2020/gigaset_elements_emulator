@@ -81,4 +81,10 @@ configuration:
   log_requests:
     name: Logovat hlavičky požadavků
     description: Podrobné logování, jen pro ladění.
+  log_heartbeats:
+    name: Logovat heartbeaty
+    description: >-
+      Zapsat řádek EVENT HEARTBEAT při každém prázdném cloudovém long-pollu
+      (zhruba jednou za 20 s na spojení). Vypněte, ať se log jinak nečinné
+      základny zbytečně neplní.
 
