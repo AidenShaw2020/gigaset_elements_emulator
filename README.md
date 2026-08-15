@@ -1,4 +1,5 @@
-# Local gateway for Gigaset elements
+![Local gateway for Gigaset elements](gigaset_gateway/logo.png)
+
 
 A self-hosted replacement for the Gigaset elements cloud. The base station keeps
 its original firmware and simply talks to this gateway instead of
