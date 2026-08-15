@@ -110,6 +110,7 @@ api-bs.gigaset-elements.de:443
 | `timezone` / `timezone_name` | pushed to the base station |
 | `firmware_cre_dir` | where the stock Lua files are |
 | `log_requests` | log request headers, for debugging only |
+| `log_heartbeats` | log `EVENT HEARTBEAT` lines; the base keeps a long-poll connection open for cloud events and every empty poll (roughly every 20 s, per connection) logs one - turn off to cut most of the log volume |
 
 The certificate is generated on first start and kept in the add-on data
 directory, so the base does not have to re-request a signature after a restart.
