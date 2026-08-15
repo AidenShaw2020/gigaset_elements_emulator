@@ -77,12 +77,14 @@ base station's flash:
    remove the bridge, then attach a 3.3 V UART adapter. All LEDs stay dark and
    the mask ROM starts emitting `STX` at 9600 baud. The header is, component
    side with the ethernet jack down, left to right: **URX / GND / UTX**.
-2. `python gigaset_uart_dump.py --port COM3 --output flash.bin`
+<img width="800" height="480" alt="image" src="https://github.com/user-attachments/assets/6bfc5fba-f236-435c-818c-1024b7ca2d39" />
+
+3. `python gigaset_uart_dump.py --port COM3 --output flash.bin`
    The dump is read-only - the tool never sends an erase or program command.
    Eight megabytes take about thirteen minutes.
-3. `python -m pip install jefferson`
-4. `python extract_base_manifest.py flash.bin -o cre_manifest.json`
-5. Copy the result to `/share/gigaset/cre_manifest.json` (add-on) or point
+4. `python -m pip install jefferson`
+5. `python extract_base_manifest.py flash.bin -o cre_manifest.json`
+6. Copy the result to `/share/gigaset/cre_manifest.json` (add-on) or point
    `cre_manifest_file` at it (script).
 
 Keep the dump. It is the only backup of the rules on that base, and the Lua
