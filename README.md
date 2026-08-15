@@ -77,7 +77,7 @@ base station's flash:
    remove the bridge, then attach a 3.3 V UART adapter. All LEDs stay dark and
    the mask ROM starts emitting `STX` at 9600 baud. The header is, component
    side with the ethernet jack down, left to right: **URX / GND / UTX**.
-<img width="800" height="480" alt="image" src="https://github.com/user-attachments/assets/6bfc5fba-f236-435c-818c-1024b7ca2d39" />
+<img width="600" height="320" alt="image" src="https://github.com/user-attachments/assets/6bfc5fba-f236-435c-818c-1024b7ca2d39" />
 
 3. `python gigaset_uart_dump.py --port COM3 --output flash.bin`
    The dump is read-only - the tool never sends an erase or program command.
