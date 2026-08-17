@@ -1,0 +1,124 @@
+This project's own contribution: it adds a read-only "452dump" build target
+next to Gigaset's stock "452fp" flash programmer, gated entirely behind a new
+FLASH_DUMP macro so the stock programmer paths are untouched. Applied by
+build_uart_loader.sh to a fresh checkout of Gigaset's own published SC14452
+opensource package (see README.md, "Ownership of the UART loader") - this
+file does not reproduce that package, only the delta needed to build the
+dump-only variant.
+
+diff -ruN a/src/dialog/uart/target/Makefile b/src/dialog/uart/target/Makefile
+--- a/src/dialog/uart/target/Makefile
++++ b/src/dialog/uart/target/Makefile
+@@ -18,6 +18,14 @@
+ 		$(OBJCOPY) ${OBJCFLAGS} -O binary 452fp.elf 452fp.bin
+ 		$(OBJDUMP) -d -x 452fp.elf > 452fp.nam
+ 
++452dump: 	452dump.elf
++		$(OBJCOPY) ${OBJCFLAGS} -O binary 452dump.elf 452dump.bin
++		$(OBJDUMP) -d -x 452dump.elf > 452dump.nam
++
++452dump.elf: depend $(OBJS) $(LDSCRIPT)
++		$(CC) $(CFLAGS) -DSC14452 -DFLASH_DUMP -c -o flashdump.o flprogr.c
++		$(LD) $(LDFLAGS) $(LDFLAGS_EXTRA) $(OBJS) flashdump.o $(LIBGCC) $(EXTERN_LIB) -Map=452dump.map -o 452dump.elf
++
+ 452fp.elf:	depend $(OBJS) $(LDSCRIPT)
+ 		$(CC) $(CFLAGS) -DSC14452 -c -o flprogr.o flprogr.c
+ 		$(LD) $(LDFLAGS) $(LDFLAGS_EXTRA) $(OBJS) flprogr.o $(LIBGCC) $(EXTERN_LIB) -Map=452fp.map -o 452fp.elf 		
+diff -ruN a/src/dialog/uart/target/flprogr.c b/src/dialog/uart/target/flprogr.c
+--- a/src/dialog/uart/target/flprogr.c
++++ b/src/dialog/uart/target/flprogr.c
+@@ -411,8 +411,10 @@
+ 	if (SpiFlashWaitTillReady())
+ 		return ERR_TIMOUT;
+ 
++#if !defined FLASH_DUMP
+ 	if (SpiFlashSetWriteEbable())
+ 		return ERR_TIMOUT;
++#endif
+ 
+ 	spi_mem_cs_low();
+ 	putByte_SPI2(SPI_FLASH_RDID_CMD);
+@@ -584,6 +586,25 @@
+    }
+ }
+ 
++#if defined FLASH_DUMP
++/* Fast, read-only dump transport. The production programmer deliberately
++ * delays every control byte; that would make an 8 MiB dump take days. */
++static void SendCharFast(uint8 value)
++{
++   SetWord(UART_RX_TX_REG, value);
++   SetWord(UART_CLEAR_TX_INT_REG, 0x01);
++   while (GetBits(UART_CTRL_REG,TI) != 1) { }
++}
++
++static void SendUint32Fast(uint32 value)
++{
++   SendCharFast((uint8)(value));
++   SendCharFast((uint8)(value >> 8));
++   SendCharFast((uint8)(value >> 16));
++   SendCharFast((uint8)(value >> 24));
++}
++#endif
++
+ 
+ int main(void)
+ {
+@@ -595,6 +616,15 @@
+ 	uint8 crc;        
+ 	uint8 *ptr_code;
+ 	uint8 *temp_ptr;  
++#if defined FLASH_DUMP
++	uint32 dump_offset;
++	uint32 dump_length;
++	uint32 dump_hash;
++	uint32 dump_index;
++	uint8 *dump_ptr;
++	static const uint8 dump_magic[8] = { 'G', 'I', 'G', 'A', '4', '5', '2', 'D' };
++	static const uint8 dump_done[4] = { 'D', 'O', 'N', 'E' };
++#endif
+ 
+ 	/* Freeze Watchdog */
+ 	SetWord(SET_FREEZE_REG,FRZ_WDOG);
+@@ -654,6 +684,41 @@
+ #endif
+ 	
+ 	LED(YELLOW,1);
++
++#if defined FLASH_DUMP
++	/* The ROM loader starts at 9600 baud. uartfp then changes to 115200;
++	 * give the host enough time to reconfigure its UART before the header. */
++	DELAY(1000);
++	temp = SpiFlashID();
++	for (i = 0; i < sizeof(dump_magic); i++)
++		SendCharFast(dump_magic[i]);
++	SendUint32Fast(FLASH_MEMORY_SIZE);
++	SendUint32Fast(temp);
++
++	dump_hash = 2166136261UL; /* FNV-1a */
++	dump_offset = 0;
++	dump_ptr = (uint8*)COMPARE_BUFF;
++	while (dump_offset < FLASH_MEMORY_SIZE)
++	{
++		dump_length = MIN(4096UL, FLASH_MEMORY_SIZE - dump_offset);
++		if (SpiFlashRead(dump_offset, dump_ptr, dump_length) != ERR_OK)
++			LED_ERROR;
++		for (dump_index = 0; dump_index < dump_length; dump_index++)
++		{
++			dump_hash ^= dump_ptr[dump_index];
++			dump_hash *= 16777619UL;
++			SendCharFast(dump_ptr[dump_index]);
++		}
++		dump_offset += dump_length;
++		LED(BLUE, ((dump_offset >> 16) & 1));
++	}
++	SendUint32Fast(dump_hash);
++	for (i = 0; i < sizeof(dump_done); i++)
++		SendCharFast(dump_done[i]);
++	LED_OFF;
++	LED(GREEN,1);
++	while (1) { }
++#endif
+     
+ 	while(1)
+ 	{

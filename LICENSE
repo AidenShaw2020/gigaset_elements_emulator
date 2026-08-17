@@ -25,3 +25,11 @@ SOFTWARE.
 The Lua files extracted from a Gigaset elements base station are firmware
 belonging to Gigaset Communications GmbH. They are not part of this project,
 are not distributed with it, and are not covered by this license.
+
+---
+
+The SC14452 UART dump loader built by `build_uart_loader.sh` is compiled from
+Gigaset's own published opensource package (mirrored by the Osmocom DECT
+project) and belongs to Gigaset Communications GmbH / Dialog Semiconductor.
+It is not part of this project, is not distributed with it - the script only
+fetches and compiles it on demand - and is not covered by this license.
