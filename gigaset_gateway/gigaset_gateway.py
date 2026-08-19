@@ -464,7 +464,16 @@ end
 
 -- Parovaci okno se samo nezavira, takze se k nemu rovnou nastavi casovac.
 -- Bezi na zakladne, tedy plati i kdyz brana mezitim spadne nebo se restartuje.
+--
+-- Pred "regon" se vzdy posle "regoff", i kdyz okno podle nas jeste bezi.
+-- Duvod: opakovane "Parovani zapnout" behem jiz otevreneho okna nekdy nevedlo
+-- k uspesnemu sparovani, zatimco pockat na prirozene vyprseni (ktere take
+-- konci "regoff") a pak spustit parovani znovu spolehlive pomohlo. Nejde tedy
+-- o zavrene okno (regon zustava stejny), ale nejspis o to, ze UleApp bere
+-- "regon" behem jiz aktivniho parovani jako no-op a vnitrni stav si neresetuje
+-- - explicitni "regoff" tesne pred kazdym "regon" tomu ma zabranit.
 local function pairon(label, cmd, dev, devtype)
+    ule(label, "regoff", "")
     ule(label, cmd, dev)
     timer_set(M.name, PAIR_TIMER, __PAIR_TIMEOUT__, "s")
     log("gwctl parovaci okno se zavre za {} s", __PAIR_TIMEOUT__)
