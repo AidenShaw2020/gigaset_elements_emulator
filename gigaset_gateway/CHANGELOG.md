@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.44
+
+- `gwctl`'s "Párování zapnout" now sends `regoff` immediately before
+  `regon`, instead of just `regon`. This is a plausible partial fix, not a
+  confirmed one: pairing a node sometimes silently fails (node just blinks,
+  nothing reaches the gateway at all - confirmed on live MQTT capture, and
+  the node isn't in the base's own `reglist` either, so it isn't a stale
+  registration on our side). The one reliable workaround found so far is to
+  let the pairing window expire on its own (which also ends in a `regoff`)
+  before starting it again, together with a battery pull on the node - so
+  repeating `regon` while a window is already open, without an intervening
+  `regoff`, may be a no-op that leaves the base's internal scan state stuck.
+  Sending `regoff` first should rule that part out; the node-side battery
+  pull may still be needed on top of it, since we don't have visibility
+  into what's actually happening inside `UleApp` or the node's own DECT
+  join state.
+
 ## 1.0.43
 
 - Fix `um01` pressure never updating in Home Assistant even though
