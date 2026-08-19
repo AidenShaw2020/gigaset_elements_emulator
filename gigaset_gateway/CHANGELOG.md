@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.43
+
+- Fix `um01` pressure never updating in Home Assistant even though
+  temperature does. The node's periodic response to `temp` isn't just
+  `temp=...` - in normal operation it comes back as `tp=<celsius>,<hpa>`,
+  and `gigaset_gateway.py` only ever read the first (temperature) field of
+  that pair, silently dropping the second. `um01-9.lua`'s hourly `measure()`
+  tried to work around this by also sending a separate `press` command
+  right after `temp`, but the node only reliably answers the first of two
+  commands sent back-to-back without waiting for a reply - the log shows
+  `press=...` responses only from isolated, manually-sent `press` requests,
+  never from the automatic pairing. `gigaset_gateway.py` now reads the
+  second field of `tp` as pressure, and `um01-9.lua` no longer sends the
+  redundant, unreliable second command - one `temp` request is enough for
+  both readings.
+
+## 1.0.42
+
+- Stop `ws02-16.lua`/`ds02-134.lua` answering a node's `calreq` with `cal`
+  on their own. The official pairing flow (open the window to wake the
+  sensor, close it, then press the button) exists so calibration captures
+  the sensor in its real, mounted, closed position; answering
+  automatically - whether immediately or after some fixed delay - could
+  capture whatever position it happened to be in while still being handled
+  or placed. That is the likely explanation for window/door sensors that
+  report `open`/`close` correctly at first and then silently get stuck
+  after a while - tilt keeps working because it doesn't depend on
+  calibration, only open/close does. The libraries now send `cal` only in
+  response to the node's own `button` event (the same pairing/confirm
+  button the app tells you to press) or an explicit manual command from
+  Home Assistant - never on a timer, and never without that confirmation.
+
 ## 1.0.41
 
 - Stop `ws02-15.lua` guessing `temp`/`press` at real `ws02` nodes once an

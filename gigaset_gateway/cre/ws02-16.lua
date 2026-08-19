@@ -11,12 +11,28 @@
 -- Prikazy do senzoru:
 --   cal    - soucasnou polohu si zapamatuj jako "zavreno" (odpovi caldone)
 --   recal  - zahod soucasnou kalibraci
+--
+-- Oficialni navod k parovani (viz appka) je: otevri okno (probudi senzor),
+-- zavri okno, AZ PAK stiskni tlacitko na senzoru - teprve tenhle stisk je
+-- potvrzeni "ted je to ve spravne poloze".  Kdybychom na "calreq" odpovedeli
+-- "cal" hned/automaticky, muzeme si takhle zapsat jako "zavreno" polohu, ve
+-- ktere senzor jeste drzi v ruce nebo se teprve umist'uje - to je pravdepodobna
+-- pricina hlaseneho problemu, kdy ws02 po case prestane hlasit open/close
+-- (kalibrace je od zacatku spatne, tilt funguje dal protoze na kalibraci
+-- nezavisi).
+--
+-- DULEZITE: kalibrace se proto NIKDY neposila sama jen kvuli uplynulemu casu.
+-- Jedina spolehliva a jedina pripustna cesta je vyslovne potvrzeni uzivatelem
+-- - bud stiskem tlacitka na senzoru (viz "button" nize), nebo rucnim prikazem
+-- z Home Assistantu. Automaticky "timeout" fallback, ktery by kalibraci
+-- odeslal sam bez lidskeho potvrzeni, je presne to chovani, ktere zpusobilo
+-- puvodni problem, a nesmi se sem vratit.
 -- POZOR: prikaz se MUSI posilat pres ule_command_send.  Zapis na JBus tema
 -- ulecontrol (to dela i stock /usr/bin/calibrate.sh) UleApp zahodi, protoze
 -- propousti jen prikazy ze sve vlastni tabulky (regon/regoff/reglist/delete).
 --
 -- "temp"/"press" tahle knihovna schvalne nezkousi: umi je jen uzly postavene
--- na um01 (viz UM01_FIRMWARE.md a um01-8.lua), skutecny ws02 na ne neodpovi
+-- na um01 (viz UM01_FIRMWARE.md a um01-9.lua), skutecny ws02 na ne neodpovi
 -- vubec. Kdyby pod timhle typem bezel prave takovy prevedeny uzel, prikazy
 -- porad jdou poslat rucne pres ws02.execute_ule_command.
 
@@ -24,9 +40,11 @@ local ws02 = {}
 
 local DEV_TYPE = "ws02"
 
--- Pauza mezi automatickymi pokusy, aby se pri smycce calreq nezahltil DECT.
+-- Jak casto nejvyse pripomenout v logu, ze uzel ceka na stisk tlacitka - jen
+-- log, zadny prikaz se odtud neposila (viz DULEZITE vyse).
 local RETRY_DELAY = 120
--- Po tolika pokusech bez "caldone" se prepne na dlouhy interval a jen se loguje.
+-- Po tolika pripominkach uz jen dlouhy odstup, aby log nezahltily uzly bez
+-- tlacitka ci nedostupne.
 local MAX_TRIES = 3
 local BACKOFF_DELAY = 3600
 
@@ -42,7 +60,7 @@ local state = {}
 local function entry(devId)
     local item = state[devId]
     if item == nil then
-        item = { last = 0, tries = 0 }
+        item = { last = 0, tries = 0, awaiting = false }
         state[devId] = item
     end
     return item
@@ -81,13 +99,14 @@ function ws02.on_ule_event(devType, devId, url, payload)
 
     if value == "caldone" then
         os.remove(ARM_PREFIX .. devId)
-        state[devId] = { last = os.time(), tries = 0 }
+        state[devId] = { last = os.time(), tries = 0, awaiting = false }
         cloudLog.warn("ws02 kalibrace hotova {}", devId)
         return
     end
 
     -- Uzel je prave vzhuru, takze je to jedina spolehliva chvile na odeslani
-    -- rucne vyzadaneho prikazu.
+    -- rucne vyzadaneho prikazu. Ma prednost pred vsim nasledujicim, vcetne
+    -- automatickeho zpracovani tlacitka nize.
     local armed = take_armed(devId)
     if armed ~= nil and armed ~= "" then
         if armed == "cal" then
@@ -105,11 +124,34 @@ function ws02.on_ule_event(devType, devId, url, payload)
         return
     end
 
+    -- Parovaci tlacitko: podle navodu ho uzivatel mackne az PO fyzickem
+    -- zavreni okna, takze kdyz prijde behem cekani na kalibraci, je to
+    -- nejspolehlivejsi chvile na "cal" - poloha uz je jista.
+    if value == "button" then
+        local item = entry(devId)
+        if item.awaiting then
+            ws02.calibrate(devId)
+        end
+        return
+    end
+
     if value ~= "calreq" then
         return
     end
 
+    -- POZOR: tady se kalibrace NIKDY nesmi odeslat sama jen kvuli uplynulemu
+    -- casu - jedine spolehlive potvrzeni polohy je stisk tlacitka (vyse) nebo
+    -- rucni prikaz z Home Assistantu (on_cloud_event nize). Tahle vetev jen
+    -- pripominkuje v logu, ze uzel na potvrzeni ceka.
     local item = entry(devId)
+    local first_request = not item.awaiting
+    item.awaiting = true
+    if first_request then
+        item.last = os.time()
+        item.tries = 1
+        cloudLog.warn("ws02 kalibrace {} ceka na stisk tlacitka na senzoru", devId)
+        return
+    end
     local delay = RETRY_DELAY
     if item.tries >= MAX_TRIES then
         delay = BACKOFF_DELAY
@@ -117,10 +159,9 @@ function ws02.on_ule_event(devType, devId, url, payload)
     if os.time() - item.last < delay then
         return
     end
-    if item.tries == MAX_TRIES then
-        cloudLog.warn("ws02 kalibrace {} opakovane selhava, potreba rucni postup", devId)
-    end
-    ws02.calibrate(devId)
+    item.last = os.time()
+    item.tries = item.tries + 1
+    cloudLog.warn("ws02 kalibrace {} porad ceka na stisk tlacitka na senzoru", devId)
 end
 
 function ws02.on_cloud_event(event, data)
@@ -130,7 +171,7 @@ function ws02.on_cloud_event(event, data)
     -- Rucne vyzadana kalibrace ma prednost pred automatikou, tak se citac
     -- pokusu vynuluje a automatika hned nezacne posilat vlastni "cal".
     if data.command == "cal" or data.command == "recal" then
-        state[data.deviceId] = { last = os.time(), tries = 0 }
+        state[data.deviceId] = { last = os.time(), tries = 0, awaiting = false }
     end
     ws02.execute_ule_command(data.deviceId, data.command)
 end
