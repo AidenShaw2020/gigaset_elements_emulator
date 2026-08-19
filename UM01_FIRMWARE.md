@@ -255,3 +255,55 @@ finished rebooting.
 **Calibrating an `um01` works with `cfgclose` followed by `cal2`.** Everything
 above the "first step" section is still accurate background; the missing
 piece was that the first step is a side effect of a restart, not a command.
+
+## Reading a DS02 (and why it can't be relabelled this way)
+
+`ds02` and `ws02` run the same single-step calibration externally, which
+raises an obvious question if you have spare `ds02` units and need a `ws02`:
+can one be relabelled the way a `um01` can be turned into a `ws02` above?
+Reading it answers that, but not the way we hoped.
+
+### What is inside a DS02
+
+Board `W30851` / `Q2511-B101-4` - the same `W30851` reference as the `um01`
+board above, just paired with a different radio module. Same chip family too:
+**Silicon Labs EFM32G210F128**, QFN32, rev 20 (`um01`'s was rev 144 - same
+part, different die batch). Debug port unlocked, same pins as above (`PF0`
+= chip pin 25 = `SWCLK`, `PF1` = chip pin 26 = `SWDIO`, chip pin 9 =
+`RESETn`), read with the exact same OpenOCD commands.
+
+![Wiring used to read the sensor](docs/ds02_swd_wiring.jpg)
+
+Wire colours in the photo, same convention as the `um01` photo above: white
+`SWCLK`, yellow `SWDIO`, black `GND`, red `3.3 V`.
+
+### The command vocabulary isn't in this chip
+
+`extract_um01_commands.py` and a plain case-insensitive search both come up
+empty: not one of `cal`, `ver=`, `ev=`, `nvm=`, `statall`, `chipver` appears
+anywhere in the 128 KiB image, even though the node visibly answers `cal` and
+sends `ver=`/`ev=calreq` over the air. The reason is architectural, not
+obfuscation: this EFM32 is not the ULE command parser. It talks to a second,
+separate chip - the shielded DECT ULE radio module - over `USART0` at 9600
+baud, using a small binary register protocol (a length-prefixed frame, an
+opcode byte for register read/write, a register index, no text anywhere).
+The human-readable `cal`/`ver=`/`ev=` vocabulary lives in *that* module, not
+in the one this document shows how to read.
+
+One of those registers, index `0x16`, holds a single ASCII byte: `'d'` or
+`'w'`, selecting between two state machines that are both already compiled
+into this same firmware. But every reference to that register in the image is
+a *read* - there is no code path anywhere that writes to it, and its default
+value is `0`. It has to be written by the other chip after every reset. So
+the firmware genuinely knows how to run as either a door or a window sensor,
+but which one it is on a given boot is a decision this chip receives, not one
+it makes or remembers.
+
+That is also why the `um01` conversion trick doesn't transfer: there is no
+`nvm=`-style command here, because there is no command parser here at all.
+Relabelling a `ds02` as `ws02` would mean reverse-engineering the radio
+module instead - a different chip, and out of scope for this document.
+
+The same bootloader trap as `um01` applies here too: it checks whether
+`SWCLK` is held high before jumping to the application, so an SWD probe left
+connected through a reset diverts the boot into firmware-update mode instead.
