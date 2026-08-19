@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.40
+
+- Fix the `um01` pressure sensor never appearing in Home Assistant for
+  anyone who didn't manually request it. `ws02-15.lua` has always asked
+  its nodes for `temp`/`press` once an hour; `um01-8.lua` never did, so a
+  freshly paired `um01` would only get a pressure reading (and the MQTT
+  discovery message that makes it show up as an entity in the first
+  place) if something happened to send the `press` command by hand.
+  `um01-8.lua` now polls the same way `ws02-15.lua` does, piggybacking on
+  the node's own wake-ups rather than adding a schedule of its own.
+
 ## 1.0.39
 
 - Fix `log_heartbeats` doing nothing. The 1.0.38 option was added to the
