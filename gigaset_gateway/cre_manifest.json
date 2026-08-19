@@ -8,7 +8,7 @@
     "db": "/api/v1/bs01/configuration/libs/db/db-66.lua",
     "device_state_helper": "/api/v1/bs01/configuration/libs/device_state_helper/device_state_helper-2.lua",
     "diagnostic_event_helper": "/api/v1/bs01/configuration/libs/diagnostic_event_helper/diagnostic_event_helper-2.lua",
-    "ds02": "/api/v1/bs01/configuration/libs/ds02/ds02-133.lua",
+    "ds02": "/api/v1/bs01/configuration/libs/ds02/ds02-134.lua",
     "gwctl": "/api/v1/bs01/configuration/libs/gwctl/gwctl-1.lua",
     "gwquiet": "/api/v1/bs01/configuration/libs/gwquiet/gwquiet-1.lua",
     "hb01": "/api/v1/bs01/configuration/libs/hb01/hb01-133.lua",
@@ -28,9 +28,9 @@
     "time_helper": "/api/v1/bs01/configuration/libs/time_helper/time_helper-8.lua",
     "ts01": "/api/v1/bs01/configuration/libs/ts01/ts01-133.lua",
     "ts01_runtime_configuration": "/api/v1/bs01/configuration/libs/ts01_runtime_configuration/ts01_runtime_configuration-129.lua",
-    "um01": "/api/v1/bs01/configuration/libs/um01/um01-8.lua",
+    "um01": "/api/v1/bs01/configuration/libs/um01/um01-9.lua",
     "wd01": "/api/v1/bs01/configuration/libs/wd01/wd01-1.lua",
-    "ws02": "/api/v1/bs01/configuration/libs/ws02/ws02-15.lua"
+    "ws02": "/api/v1/bs01/configuration/libs/ws02/ws02-16.lua"
   },
   "internal_rules": {
     "internal_rule_automatic_firmware_update_recipe-174205838": "/api/v1/bs01/configuration/rules/174205838/internal_rule_automatic_firmware_update_recipe-174205838-4.lua",

@@ -608,9 +608,9 @@ def temperature_from_payload(sink: str, payload: str) -> float | None:
     """Teplota ve stupnich Celsia, nebo None, kdyz hodnota teplotou neni.
 
     Uzel ji hlasi ve trech tvarech: pod "tp" jako prvni polozku seznamu
-    oddeleneho carkami, pod "state" jako druhou ze ctyr polozek oddelenych
-    strednikem - obe v desetinach stupne - a pod "temp" jako dve hodnoty
-    oddelene lomitkem, uz ve stupnich.
+    oddeleneho carkami (druha polozka je tlak, viz volani nize), pod "state"
+    jako druhou ze ctyr polozek oddelenych strednikem - obe v desetinach
+    stupne - a pod "temp" jako dve hodnoty oddelene lomitkem, uz ve stupnich.
     """
     if sink == "temp":
         try:
@@ -1579,6 +1579,16 @@ class MqttBridge:
             celsius = temperature_from_payload(sink, payload)
             if celsius is not None:
                 self._temperature(root, object_id, common, celsius)
+                # "tp" nese tlak jako druhou polozku seznamu oddeleneho
+                # carkami (napr. "tp=+24.5,990.012") - dosud se zahazovala,
+                # takze tlak v HA nikdy neaktualizoval odpoved na periodicky
+                # dotaz "temp", jen na samostatny (a nespolehlivy) "press".
+                if sink == "tp":
+                    parts = payload.split(",")
+                    if len(parts) >= 2:
+                        hpa = pressure_from_payload(parts[1])
+                        if hpa is not None:
+                            self._pressure(root, object_id, common, hpa)
                 return
 
         if sink == PRESSURE_SINK:

@@ -1,5 +1,5 @@
 name: Gigaset elements local gateway
-version: "1.0.41"
+version: "1.0.43"
 slug: gigaset_gateway
 description: >-
   Local replacement for the Gigaset elements cloud. Keeps the original base

@@ -17,8 +17,11 @@
 --   cal    - uloz soucasnou polohu jako ZAVRENO (prvni krok)
 --   cal2   - uloz soucasnou polohu jako OTEVRENO (druhy krok)
 --   recal  - zahod kalibraci
---   temp   - hlas teplotu (odpovi "temp=+25.4/+23.5")
---   press  - hlas tlak (odpovi "press=995.088162"), viz UM01_FIRMWARE.md
+--   temp   - hlas teplotu (odpovi "temp=+25.4/+23.5", ale v bezicim provozu
+--            chodi stejny udaj hlavne jako periodicke "tp=+24.5,990.012" -
+--            DRUHA polozka za carkou je tlak v hPa, viz mereni nize)
+--   press  - hlas tlak (odpovi "press=995.088162"), viz UM01_FIRMWARE.md.
+--            Netreba volat pravidelne - "temp" uz tlak nese s sebou.
 --
 -- Nazvy prikazu jsou vyctene primo z firmwaru uzlu (EFM32G Gecko, SWD, tabulka
 -- retezcu na 0x172ec).  Prvni krok se jmenuje "cal", NIKOLI "cal1" - retezec
@@ -63,6 +66,11 @@ function um01.execute_ule_command(devId, command)
 end
 
 -- Uzel je prave vzhuru, takze je to jedina chvile, kdy ma smysl se ptat.
+-- Staci "temp": odpoved "tp=<teplota>,<tlak>" nese obe hodnoty najednou (viz
+-- slovnik prikazu vyse). Puvodne se posilalo jeste samostatne "press" hned
+-- za tim, ale uzel v tehle dvojici prijme spolehlive jen prvni prikaz -
+-- druhy, poslany bez cekani na odpoved, se ve skutecnem provozu nikdy
+-- neprojevil (zadna odpoved "press=..." krome rucniho, izolovaneho testu).
 local function measure(devId)
     local now = os.time()
     if measured[devId] ~= nil and now - measured[devId] < MEASURE_INTERVAL then
@@ -70,7 +78,6 @@ local function measure(devId)
     end
     measured[devId] = now
     um01.execute_ule_command(devId, "temp")
-    um01.execute_ule_command(devId, "press")
 end
 
 function um01.on_ule_event(devType, devId, url, payload)
