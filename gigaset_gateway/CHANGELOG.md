@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.41
+
+- Stop `ws02-15.lua` guessing `temp`/`press` at real `ws02` nodes once an
+  hour. Only nodes built on `um01` hardware answer those commands (see
+  `UM01_FIRMWARE.md`); a genuine `ws02` never responds, so the hourly
+  request was pure overhead for the common case. `um01-8.lua` (1.0.40)
+  covers the case that made this worth doing in the first place - a
+  `um01` running under its own, correct type.
+
 ## 1.0.40
 
 - Fix the `um01` pressure sensor never appearing in Home Assistant for
