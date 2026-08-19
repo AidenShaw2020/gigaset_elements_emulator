@@ -17,6 +17,8 @@
 --   cal    - uloz soucasnou polohu jako ZAVRENO (prvni krok)
 --   cal2   - uloz soucasnou polohu jako OTEVRENO (druhy krok)
 --   recal  - zahod kalibraci
+--   temp   - hlas teplotu (odpovi "temp=+25.4/+23.5")
+--   press  - hlas tlak (odpovi "press=995.088162"), viz UM01_FIRMWARE.md
 --
 -- Nazvy prikazu jsou vyctene primo z firmwaru uzlu (EFM32G Gecko, SWD, tabulka
 -- retezcu na 0x172ec).  Prvni krok se jmenuje "cal", NIKOLI "cal1" - retezec
@@ -36,6 +38,13 @@ local DEV_TYPE = "um01"
 -- Znacka odlozeneho prikazu od gwctl, viz ws02-14.lua.
 local ARM_PREFIX = "/tmp/gwarm."
 
+-- Jak casto si rict o teplotu a tlak, viz ws02-15.lua - stejny duvod
+-- (baterie, v mistnosti se stejne nic rychleho nedeje).
+local MEASURE_INTERVAL = 3600
+
+-- devId -> cas posledniho dotazu na teplotu a tlak
+local measured = {}
+
 local function take_armed(devId)
     local path = ARM_PREFIX .. devId
     local handle = io.open(path, "r")
@@ -51,6 +60,17 @@ end
 function um01.execute_ule_command(devId, command)
     cloudLog.warn("um01 ule_command_send {} {}", devId, command)
     ule_command_send(DEV_TYPE, devId, command)
+end
+
+-- Uzel je prave vzhuru, takze je to jedina chvile, kdy ma smysl se ptat.
+local function measure(devId)
+    local now = os.time()
+    if measured[devId] ~= nil and now - measured[devId] < MEASURE_INTERVAL then
+        return
+    end
+    measured[devId] = now
+    um01.execute_ule_command(devId, "temp")
+    um01.execute_ule_command(devId, "press")
 end
 
 function um01.on_ule_event(devType, devId, url, payload)
@@ -72,6 +92,12 @@ function um01.on_ule_event(devType, devId, url, payload)
     if armed ~= nil and armed ~= "" then
         cloudLog.warn("um01 odlozeny prikaz {} {}", devId, armed)
         um01.execute_ule_command(devId, armed)
+        return
+    end
+
+    -- Dokud uzel zada o prvni krok kalibrace, nema smysl ho zatezovat merenim.
+    if value ~= "cal1req" then
+        measure(devId)
     end
 end
 
