@@ -194,11 +194,22 @@ it (for example a base's own "turn off every known siren" logic on an
 alarm mode change) will try to command devices that were never really
 paired to this physical unit and get rejected.
 
-`delete`/`deleteall` will not clean this up - both act on the live DECT
-join table, which correctly never had these devices, not on this file. Use
-the `endnodes_cleanup` control action instead (see the add-on's
-`DOCS.md`/`CHANGELOG.md`) to remove the specific stale entries directly, no
-further UART step needed.
+`delete` (Unpair) will not clean this up on its own - it acts on the live
+DECT join table, not on this file, and a stale entry copied from the donor
+is generally not actually present there. Use the `endnodes_cleanup`
+control action instead (see the add-on's `DOCS.md`/`CHANGELOG.md`) to
+remove the specific stale entries directly, no further UART step needed.
+
+Some stale entries still show up as targets of a base's own internal
+wildcard commands (for example "turn every known siren off" on an alarm
+mode change) even after `endnodes_cleanup`, logged as a base-reported
+`UZEL ODMÍTL`/rejected-command event repeating for the same device id. This
+is cosmetic, not harmful - nothing about the add-on or the base's real
+sensors breaks because of it - but if it needs to go away, `deleteall`
+(also in `DOCS.md`) resets the base's *entire* DECT device table at once,
+phantom and real entries alike, and the real sensors need to be paired
+again afterwards. Not yet confirmed to actually silence this specific log
+line on real hardware - report back if you try it.
 
 ## Writing it back
 
