@@ -180,7 +180,16 @@ BASE_CONTROLS = (
 
 # Tlacitka vazana ke konkretnimu senzoru.  Kalibrace ma smysl jen u typu,
 # ktere hlasi polohu.
-DEVICE_CONTROLS = (("unpair", "Odparovat", "mdi:link-off"),)
+#
+# "unpair" posila prikaz "delete" zakladne a ceka, az ta sama potvrdi
+# udalosti "deleted" (viz Gateway.publish_event) - pro zarizeni, jehoz
+# zakladna uz neni dostupna (vymenena, offline, mimo tuto instanci), by na
+# potvrzeni cekalo navzdy.  "forget" nic neposila zadne zakladne a rovnou
+# smaze mistni evidenci i discovery, viz Gateway._forget_device.
+DEVICE_CONTROLS = (
+    ("unpair", "Odparovat", "mdi:link-off"),
+    ("forget", "Zapomenout i bez základny", "mdi:eraser"),
+)
 POSITION_CONTROLS = (
     ("calibrate", "Kalibrovat", "mdi:tune"),
     ("cal_reset", "Zrusit kalibraci", "mdi:restore"),
@@ -2072,10 +2081,41 @@ class Gateway:
         )
         return []
 
+    def _forget_device(self, device_type: str, device_id: str) -> None:
+        """Smazat mistni evidenci zarizeni, aniz by se cekalo na potvrzeni od zakladny.
+
+        "unpair" posila zakladne prikaz "delete" a mistni zaznam smaze az
+        potvrzujici udalost "deleted" (viz publish_event) - takze pro
+        zarizeni sparovane na zakladne, ktera uz k teto instanci brany
+        nemluvi (vymenena, offline, jina session), by cekalo navzdy. Tohle
+        smaze stav i retained discovery rovnou, bez zadneho spojeni se
+        zakladnou.
+        """
+        if ENDNODE_TYPE_RE.fullmatch(device_type) is None or ENDNODE_ID_RE.fullmatch(device_id) is None:
+            print(f"CONTROL FORGET odmítnuto: neplatný typ/id {device_type}/{device_id}", flush=True)
+            return
+        key = f"{device_type}/{device_id}"
+        with self.lock:
+            existed = self.state.pop(key, None) is not None
+            device_base_changed = self.device_base.pop(key, None) is not None
+            atomic_json_write(self.state_path, self.state)
+        if device_base_changed:
+            self._save_command_state()
+        self.mqtt.remove_device(
+            f"{self.mqtt.base_topic}/{device_type}/{device_id}",
+            f"gigaset_{device_type}_{device_id}",
+        )
+        note = "" if existed else " (v evidenci nebylo)"
+        print(f"CONTROL FORGET {key} smazáno lokálně{note}", flush=True)
+
     def request_control_action(
         self, action: str, device_type: str, device_id: str, base_key: str = ""
     ) -> None:
         """Zaradit pozadavek z MQTT do stejne fronty jako soubor s pozadavky."""
+        if action == "forget":
+            # Zadny prikaz zadne zakladne - viz _forget_device.
+            self._forget_device(device_type, device_id)
+            return
         with self.mqtt_control_lock:
             self.mqtt_control_counter += 1
             item = {
