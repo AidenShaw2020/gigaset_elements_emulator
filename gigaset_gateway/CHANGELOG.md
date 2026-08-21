@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.58
+
+- Automatically send `pair_stop` as soon as a base reports the first event
+  from a device it has never seen before. Confirmed in the field: leaving
+  the pairing window open and pressing "Parovani zapnout" again reliably
+  pairs only the first node - later nodes need the window closed and
+  reopened by hand first, even though the firmware's own 600 s timer says
+  it is still open. Pairing several sensors in a row no longer needs a
+  manual stop/start between each one; start pairing once per node instead.
+
 ## 1.0.57
 
 - Add `deleteall`, a `control.json`-only action that wipes a base's entire

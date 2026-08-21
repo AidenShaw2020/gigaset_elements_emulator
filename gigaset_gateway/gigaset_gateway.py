@@ -2683,6 +2683,7 @@ class Gateway:
         }
         key = f"{event['device_type']}/{event['device_id']}"
         device_base_changed = False
+        newly_paired = False
         with self.lock:
             if event["payload"] == "deleted":
                 # Odparovany uzel se nesmi po restartu znovu ohlasit, a prikazy pro
@@ -2690,6 +2691,7 @@ class Gateway:
                 self.state.pop(key, None)
                 device_base_changed = self.device_base.pop(key, None) is not None
             else:
+                newly_paired = key not in self.state
                 device = self.state.setdefault(
                     key,
                     {
@@ -2707,6 +2709,16 @@ class Gateway:
         if device_base_changed:
             self._save_command_state()
         self.mqtt.publish_event(event, base)
+        if newly_paired:
+            # Parovaci okno na zakladne zustava otevrene, dokud nedorazi
+            # "regoff" (viz PAIR_TIMER v gwctl) - opakovane "Parovani zapnout"
+            # behem jiz otevreneho okna ale spolehlive nesparuje dalsi uzel
+            # (overeno uzivatelem v terenu). Misto aby si na to musel
+            # pamatovat po kazdem uzlu rucne, okno se zavre samo, jakmile se
+            # prvni udalost od noveho zarizeni objevi - dalsi uzel uz chce
+            # vedomy novy "Parovani zapnout".
+            print(f"PÁROVÁNÍ {key} spárováno, zavírám okno na {base}", flush=True)
+            self.request_control_action("pair_stop", "", "", base)
         # Ohlaseni uzlu (sink/dev) zadny "payload" nema, a prave v nem uzel
         # popisuje sam sebe - bez cele zpravy by to zapadlo.
         detail = "" if event["payload"] is not None else f" raw={text.strip()}"
