@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.51
+
+- Fix new discovery (e.g. the 1.0.50 Forget button) never reaching a device
+  whose base station never talks to this add-on instance again. Discovery
+  for known devices used to be replayed only when the *specific base that
+  last reported them* sent its first request after a restart - for a
+  sensor whose base was replaced, taken offline, or simply isn't one of
+  the bases configured on this instance, that request never comes, so it
+  never saw any new button added after the entity was first created. The
+  replay now runs once whenever the add-on (re)connects to MQTT, using
+  each device's own last known base - independent of whether any base
+  station ever sends anything in that session.
+- Fix `CONTROL POLL kanál navázán z ...` (and the "base never came to ask
+  for a command" warning) only ever firing for the first base station to
+  successfully poll `/gwctl` in the process's lifetime. With more than one
+  base connected, every other one polled and worked correctly, but the
+  add-on's own log silently stayed quiet about it, as if only one base's
+  control channel had ever come up.
+
 ## 1.0.50
 
 - Add a **Forget** button next to every sensor's existing **Unpair** button.
