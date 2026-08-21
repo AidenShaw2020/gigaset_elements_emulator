@@ -39,42 +39,74 @@ that case extract them from your own device and copy them to the directory in
 The add-on ships its own `gwctl`, `gwquiet`, `ws02`, `ds02` and `um01`
 libraries, which take precedence over the stock ones.
 
-### The CRE manifest (`/share/gigaset/cre_manifest.json`)
+### The CRE manifest (`/share/gigaset/cre_manifest.<base_key>.json`)
 
-The manifest tells the base which Lua files to run, by exact file name. Every
+The manifest tells a base which Lua files to run, by exact file name. Every
 base has its own: it names the versions the original cloud gave it, including
-the automation rules its owner created. The add-on ships the one from the
-machine it was developed on, purely as a fallback.
+the automation rules its owner created.
 
-Without your base's own manifest the add-on **refuses to start**, because a
+Each physical base station needs its **own** manifest file, named after that
+base's own address: `<base_key>` is the base's LAN IP address with dots
+replaced by underscores, e.g. a base at `192.0.2.50` needs
+`/share/gigaset/cre_manifest.192_0_2_50.json`. Give the base a fixed DHCP
+lease so this name stays stable. This applies from the very first base
+station onward, not just when adding a second one - see [Multiple base
+stations](#multiple-base-stations) if you are upgrading an existing
+single-base install.
+
+Without at least one such file the add-on **refuses to start**, because a
 base deletes every Lua file its manifest does not name - and the rules its
-owner created cannot be downloaded again now that the cloud is gone.
+owner created cannot be downloaded again now that the cloud is gone. Sending
+one base's manifest to a different base would be just as destructive, so the
+add-on never falls back to serving a manifest to a base it has no file for -
+that base simply keeps asking, and the add-on's log says so.
 
-Reading it out of the base is a one-time exercise; afterwards the control
-library keeps the file up to date by itself. The repository has the tools and
-the full procedure (`gigaset_uart_dump.py`, `extract_base_manifest.py`); in
-short it is a UART dump of the flash followed by:
+Reading it out of the base is a one-time exercise per base station;
+afterwards the control library keeps the file up to date by itself. The
+repository has the tools and the full procedure (`gigaset_uart_dump.py`,
+`extract_base_manifest.py`); in short it is a UART dump of the flash followed
+by:
 
 ```
 python -m pip install jefferson
 python extract_base_manifest.py flash.bin -o cre_manifest.json
 ```
 
-Copy the result to `/share/gigaset/cre_manifest.json`.
+Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` for that
+particular base.
 
-The fix is to give the add-on your own manifest: copy `/cfg/cre` from your base
-to `/share/gigaset/cre_manifest.json`. It is a small JSON file with the keys
-`endnode_libraries`, `internal_rules` and `rules`, and it is used exactly as it
-is - the add-on only injects its own libraries and its control library.
+It is a small JSON file with the keys `endnode_libraries`, `internal_rules`
+and `rules`, and it is used exactly as it is - the add-on only injects its
+own libraries and its control library.
 
-Usually you do not have to do that by hand. The control library runs on the
-base station, so once it is loaded it sends `/mnt/data/cfg/cre` over on its own
-and the add-on writes that file for you.
+Usually you do not have to update it by hand after the first copy. The
+control library runs on the base station, so once it is loaded it sends
+`/mnt/data/cfg/cre` over on its own and the add-on keeps that base's file up
+to date for you.
 
 A base that has never run the control library does need the manual copy, and
 there is no way around it: **the base deletes every Lua file the manifest does
 not name**, so serving it a manifest that is not its own destroys the rules its
 owner created - and those cannot be fetched again now that the cloud is gone.
+
+### Multiple base stations
+
+Add a second (or further) base station the same way as the first: give it its
+own manifest file at `/share/gigaset/cre_manifest.<base_key>.json`. All base
+stations point at the same add-on, and each is identified purely by its own
+LAN address, so there is nothing else to configure - sensors from every base
+show up together in Home Assistant, grouped under their own base entity.
+
+**Upgrading an existing single-base install:** older versions of this add-on
+used one shared file, `/share/gigaset/cre_manifest.json`. Rename it to the
+new per-base form once - `/share/gigaset/cre_manifest.<base_key>.json`, using
+your base's own address - before adding a second base station. The add-on's
+log names the exact file it is missing if you get the key wrong.
+
+Scripted control requests that are not aimed at a specific sensor (pairing,
+listing nodes, alarm mode - see [Control channel](#control-channel)) need an
+explicit `"base"` field once more than one base station is connected, since
+there is otherwise no way to tell which base should carry them out.
 
 ### Router
 
@@ -98,7 +130,7 @@ api-bs.gigaset-elements.de:443
 | option | meaning |
 |---|---|
 | `gateway_address` | usually empty; the gateway uses the address the base actually reached it on |
-| `base_id` | usually empty; overrides the key derived from the base station's address |
+| `base_id` | usually empty; overrides the key derived from the base station's address, but only while a single base is connected |
 | `port` | TLS port for the cloud API |
 | `control_poll_port` | plain HTTP port the base polls for commands |
 | `control_poll_interval` | seconds between polls; also the worst-case command latency |
@@ -136,7 +168,7 @@ can also be appended to `/share/gigaset/control.json`:
 ```json
 {
   "requests": [
-    { "id": "pair-01", "action": "pair_start" },
+    { "id": "pair-01", "action": "pair_start", "base": "192_0_2_50" },
     { "id": "cal-01", "action": "cal_reset",
       "device_type": "ws02", "device_id": "025bcab723" },
     { "id": "raw-01", "action": "endnode_command", "command": "cfgclose",
@@ -149,16 +181,27 @@ Each request runs once; the id is remembered. `endnode_command` sends whatever
 is in `command` straight to the node, which is useful for trying out commands
 that have no button.
 
+Requests aimed at a specific sensor (anything with `device_type`/`device_id`)
+are routed automatically to whichever base station last reported an event
+from that sensor - no `"base"` needed. Requests aimed at a base station
+itself (`pair_start`, `pair_stop`, `reglist`, `alarm_ack`, `mode_*`) need the
+optional `"base"` field (the base_key, its address with dots replaced by
+underscores) once more than one base station is connected; with a single base
+it can be left out, same as before.
+
 ## Calibration
 
-A window or door sensor accepts `cal` **only in response to its own `calreq`**.
+A window or door sensor accepts `cal` **only in response to its own `calreq`**,
+and the add-on answers `calreq` only after the sensor's own button confirms
+the position - never automatically on a timer, since that could capture
+whatever position it happened to be in while still being handled or placed.
 To force a recalibration:
 
 1. Press *Zrušit kalibraci* (`cal_reset`).
 2. Put the window in the position that should mean *closed*.
-3. Wake the sensor with its button.
-4. The sensor starts asking for calibration and the bundled library answers
-   automatically; the current position becomes *closed*.
+3. Press the button on the sensor itself. This both wakes it and confirms the
+   position is correct now - the bundled library sends `cal` in response, and
+   the current position becomes *closed*.
 
 The universal sensor `um01` ships as a *umos* sensor and calibrates in two
 steps that only the original cloud used to drive. Neither step is triggered

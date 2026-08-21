@@ -8,9 +8,12 @@ configuration:
   base_id:
     name: Base station key
     description: >-
-      Usually leave empty - the base is named after its address, so every
-      gateway ends up on the same device. Set it only when the base reaches
-      each gateway from a different address.
+      Usually leave empty - the base is named after its address. Set it only
+      when the same base reaches the gateway from different addresses and you
+      want a stable name for it. Only takes effect while a single base
+      station is connected - once a second one shows up, every base (this one
+      included) is named after its own address instead, so two physical
+      bases never collapse into one entity.
   port:
     name: Cloud API port
     description: >-

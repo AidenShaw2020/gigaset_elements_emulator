@@ -9,8 +9,11 @@ configuration:
     name: Klíč základny
     description: >-
       Obvykle nechte prázdné - základna se v Home Assistantu jmenuje podle své
-      adresy, takže všechny brány skončí u stejného zařízení. Vyplňte jen
-      tehdy, když se ke každé bráně základna hlásí z jiné adresy.
+      adresy. Vyplňte jen tehdy, když se stejná základna hlásí z různých adres
+      a chcete pro ni pevné jméno. Funguje jen dokud je připojená jediná
+      základna - jakmile se objeví druhá, každá další se pojmenuje podle své
+      adresy i s tímhle vyplněným, aby se dvě fyzické základny neslily do
+      jedné entity.
   port:
     name: Port cloudového API
     description: >-

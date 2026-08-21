@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.45
+
+- Support more than one base station at once. Previously the add-on assumed
+  exactly one base: commands were queued in a single shared list handed to
+  whichever base happened to poll `/gwctl` first, and there was only one CRE
+  manifest, shared by every connecting base - both would misroute commands
+  and, worse, risk serving one base's manifest to another and destroying its
+  rules (a base deletes every Lua file its manifest does not name).
+  - Commands are now routed to the base station a sensor was last seen on
+    (learned automatically from its events); base-station-scoped commands
+    (pairing, `reglist`, alarm mode) can take an explicit `"base"` field in
+    `control.json` requests, required once more than one base is connected.
+  - Each base station now needs its own manifest file, named after its own
+    address: `/share/gigaset/cre_manifest.<base_key>.json` instead of the
+    single `cre_manifest.json`. **Upgrading from a single-base install
+    requires renaming that file once** - see `DOCS.md` /
+    `README.md` for the exact steps; the add-on will not start without it and
+    names the exact file it expects.
+  - The optional `base_id` override now only applies while a single base
+    station is connected, so it can no longer silently collapse two physical
+    bases into one Home Assistant device once a second one shows up.
+  - The add-on's own control library (`gwctl`) and its "manifest changed,
+    please reload" nudge are now applied to every base station's manifest
+    individually, instead of only the one the old single-manifest code
+    happened to look at - each base gets the add-on's libraries injected into
+    its own file and is only asked to reload when its own manifest actually
+    changed.
+
 ## 1.0.44
 
 - `gwctl`'s "Párování zapnout" now sends `regoff` immediately before
