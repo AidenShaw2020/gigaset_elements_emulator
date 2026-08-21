@@ -160,6 +160,12 @@ Every paired node appears through MQTT discovery, grouped under the base:
 - base: identifier, address, alarm state and an alarm mode selector
 - buttons for pairing, unpairing, forgetting, listing nodes and (re)calibration
 
+**Pairing several sensors:** press "Parovani zapnout" once per sensor, not
+once for the whole batch. The add-on closes the pairing window itself as
+soon as the new node's first event arrives, because leaving it open and
+pairing a second node into the same window does not reliably work on this
+firmware even though its own 600 s timer says the window is still open.
+
 Every sensor has both an **Unpair** and a **Forget** button. Unpair tells the
 base station itself to release the node and waits for it to confirm before
 clearing the entity - the right choice for a sensor whose base is still
