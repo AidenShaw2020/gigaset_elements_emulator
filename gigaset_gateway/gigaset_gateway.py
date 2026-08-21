@@ -2616,10 +2616,6 @@ class Gateway:
         if path.startswith("/api/v1/bs/sink/unknown"):
             # Sem zakladna hlasi prikaz, kteremu uzel nerozumel (ule/error.c).
             print(f"UZEL ODMÍTL {peer} {text.strip()}", flush=True)
-        if path.startswith("/api/v1/debug/upload"):
-            # Cisty diagnosticky kanal pro gwctl "dump" - viz endnodes_dump.
-            # Jen vypise obsah do logu, nikam se neuklada.
-            print(f"DEBUG UPLOAD {peer}:\n{text}", flush=True)
 
         self.remember_base_identity(peer, base_identity_from_action(path, text))
 
@@ -3152,7 +3148,7 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
         upload = (
             len(parts) >= 2
             and parts[0] == "POST"
-            and parts[1].split("?", 1)[0] in {"/manifest", "/inventory"}
+            and parts[1].split("?", 1)[0] in {"/manifest", "/inventory", "/api/v1/debug/upload"}
         )
         if upload:
             if known:
@@ -3164,6 +3160,16 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
                 document = _read_upload(conn, head, rest)
                 if parts[1].startswith("/inventory"):
                     accepted = gateway.store_base_inventory(document, peer)
+                elif parts[1].startswith("/api/v1/debug/upload"):
+                    # Cistě diagnostika (viz endnodes_dump) - jen do logu, nikam
+                    # se neuklada, gwctl posila na tenhle kanal (8080/gwctl),
+                    # ne na cloudove HTTPS API (8443), kde by ho record() nikdy
+                    # neuvidel.
+                    print(
+                        f"DEBUG UPLOAD {peer}:\n{document.decode('utf-8', 'replace')}",
+                        flush=True,
+                    )
+                    accepted = True
                 else:
                     accepted = gateway.store_base_manifest(document, peer)
                 body = b""
