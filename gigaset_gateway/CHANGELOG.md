@@ -119,7 +119,7 @@
 
 - Relax the server's cipher policy (`context.set_ciphers("ALL:@SECLEVEL=0")`)
   alongside the 1.0.47 TLS 1.2 cap. Needed together with a re-issued client
-  certificate (see 1.0.47 and [RECOVERY.md](../../RECOVERY.md)) to get the
+  certificate (see 1.0.47 and [RECOVERY.md](../../docs/RECOVERY.md)) to get the
   unit described below connecting at all; on its own, capping the TLS
   version was not enough for that unit either.
 
@@ -154,7 +154,7 @@
   against up to this point. Re-issuing a certificate for that unit's own
   CSR and writing it back into flash, together with the TLS 1.2 cap and
   the 1.0.48 cipher relaxation, fixed this specific unit. See
-  [RECOVERY.md](../../RECOVERY.md) for the full UART-level procedure. Since
+  [RECOVERY.md](../../docs/RECOVERY.md) for the full UART-level procedure. Since
   this only reproduced on the one unit with a broken on-flash identity, a
   base that already has a valid certificate should not be affected either
   way by the TLS cap or the cipher relaxation.

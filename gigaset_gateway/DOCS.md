@@ -69,7 +69,7 @@ by:
 
 ```
 python -m pip install jefferson
-python extract_base_manifest.py flash.bin -o cre_manifest.json
+python tools/extract_base_manifest.py flash.bin -o cre_manifest.json
 ```
 
 Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` for that
@@ -195,7 +195,7 @@ that have no button.
 semicolon-separated list of device ids, e.g.
 `{ "id": "cleanup-01", "action": "endnodes_cleanup", "base": "192_0_2_50", "command": "027c3e0674;031c01eb41" }`.
 There is no button for it because the target list is different every time
-it is needed; see [RECOVERY.md](../../RECOVERY.md) for when this comes up.
+it is needed; see [RECOVERY.md](../../docs/RECOVERY.md) for when this comes up.
 
 Requests aimed at a specific sensor (anything with `device_type`/`device_id`)
 are routed automatically to whichever base station last reported an event
@@ -251,4 +251,4 @@ help.** This can mean the base's own stored TLS client identity (its
 `cert.key`/`cert.csr`/`cert.crt`) is missing or expired on its own flash -
 something a factory reset does not touch. Fixing this needs a UART-level
 recovery using a second, known-good base station as a donor; see
-[RECOVERY.md](../../RECOVERY.md) in the project root.
+[docs/RECOVERY.md](../../docs/RECOVERY.md) in the project root.

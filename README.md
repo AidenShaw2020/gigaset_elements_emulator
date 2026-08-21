@@ -78,11 +78,11 @@ you need to read that base's flash:
    remove the bridge, then attach a 3.3 V UART adapter. All LEDs stay dark and
    the mask ROM starts emitting `STX` at 9600 baud. The header is, component
    side with the ethernet jack down, left to right: **URX / GND / UTX**.
-2. `python gigaset_uart_dump.py --port COM3 --output flash.bin`
+2. `python tools/gigaset_uart_dump.py --port COM3 --output flash.bin`
    The dump is read-only - the tool never sends an erase or program command.
    Eight megabytes take about thirteen minutes.
 3. `python -m pip install jefferson`
-4. `python extract_base_manifest.py flash.bin -o cre_manifest.json`
+4. `python tools/extract_base_manifest.py flash.bin -o cre_manifest.json`
 5. Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` (add-on) or
    point `cre_manifest_file` at it (script) - `<base_key>` is that base's own
    LAN IP address with dots replaced by underscores (`192.0.2.50` becomes
@@ -343,7 +343,7 @@ The second step is the familiar `cal2`:
 3. Move the sensor to the position that should mean *open*.
 4. Queue a `calibrate_step2` request (`cal2`) and wake the sensor again.
 
-[UM01_FIRMWARE.md](UM01_FIRMWARE.md) documents how this was found, including
+[docs/UM01_FIRMWARE.md](docs/UM01_FIRMWARE.md) documents how this was found, including
 how to read the sensor's firmware and the command table recovered from it -
 and a caveat for anyone repeating the readout with a debug probe still
 attached during the restart.
@@ -399,7 +399,7 @@ delay down to 0 to 3 seconds. `warn` and `error` are left untouched.
 
 If a base lost its own Lua rules to a wrong manifest, or never reaches this
 gateway at all because its own stored TLS identity is missing or expired,
-see [RECOVERY.md](RECOVERY.md) - a UART-level procedure that rebuilds the
+see [docs/RECOVERY.md](docs/RECOVERY.md) - a UART-level procedure that rebuilds the
 broken unit's flash from a second, known-good base station while preserving
 the broken unit's own MAC, DECT pairing data and cryptographic identity.
 
