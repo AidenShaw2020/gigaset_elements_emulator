@@ -158,7 +158,16 @@ Every paired node appears through MQTT discovery, grouped under the base:
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
 - base: identifier, address, alarm state and an alarm mode selector
-- buttons for pairing, unpairing, listing nodes and (re)calibration
+- buttons for pairing, unpairing, forgetting, listing nodes and (re)calibration
+
+Every sensor has both an **Unpair** and a **Forget** button. Unpair tells the
+base station itself to release the node and waits for it to confirm before
+clearing the entity - the right choice for a sensor whose base is still
+connected. Forget clears the add-on's own record and the Home Assistant
+entity immediately, without contacting any base station - use it for a
+sensor whose base station is no longer reachable from this add-on (replaced,
+offline, or simply not one of the bases currently configured here), where
+waiting for that confirmation would wait forever.
 
 ## Control channel
 

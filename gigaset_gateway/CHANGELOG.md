@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.50
+
+- Add a **Forget** button next to every sensor's existing **Unpair** button.
+  Unpair asks the base station to release the node and only clears the
+  Home Assistant entity once the base confirms it - which never happens for
+  a sensor whose base station is no longer reachable from this add-on
+  (replaced, offline, or a base not among the ones currently configured
+  here). Forget clears the add-on's own record and the entity immediately,
+  without contacting any base station at all.
+
 ## 1.0.49
 
 - Fix two bugs found while running three base stations at once:
