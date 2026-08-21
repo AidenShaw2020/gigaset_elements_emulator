@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.49
+
+- Fix two bugs found while running three base stations at once:
+  - `/gwctl` (the plain-HTTP control channel) rejected every request from
+    any base station that had not yet triggered `remember_base_identity()`
+    (which only fires occasionally - from a certificate CN or a specific
+    rule report). With more than one base connected, whichever base didn't
+    happen to trigger that yet got every single control-channel request
+    permanently refused with `403 Forbidden`, logged as `CONTROL POLL
+    odmítnut` / `CONTROL UPLOAD odmítnut`. The check now asks whether the
+    peer has a configured CRE manifest instead - every legitimate base has
+    one from startup, so this no longer depends on incidental runtime
+    events.
+  - The first time a base sent any request after a restart, the add-on
+    replayed **every** device currently in `self.state` - including
+    devices that actually belong to a different base station - as that
+    base's own Home Assistant discovery documents. Because discovery
+    documents are only ever published once per topic, whichever base
+    happened to send the first request after a restart silently "adopted"
+    every sensor from every other base into its own `via_device`, and the
+    other base stations were left with no entities linked to them at all.
+    The replay is now filtered to only the devices actually last seen on
+    that specific base.
+
 ## 1.0.48
 
 - Relax the server's cipher policy (`context.set_ciphers("ALL:@SECLEVEL=0")`)
