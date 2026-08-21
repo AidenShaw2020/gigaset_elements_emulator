@@ -205,11 +205,17 @@ wildcard commands (for example "turn every known siren off" on an alarm
 mode change) even after `endnodes_cleanup`, logged as a base-reported
 `UZEL ODMÍTL`/rejected-command event repeating for the same device id. This
 is cosmetic, not harmful - nothing about the add-on or the base's real
-sensors breaks because of it - but if it needs to go away, `deleteall`
-(also in `DOCS.md`) resets the base's *entire* DECT device table at once,
-phantom and real entries alike, and the real sensors need to be paired
-again afterwards. Not yet confirmed to actually silence this specific log
-line on real hardware - report back if you try it.
+sensors breaks because of it.
+
+**`deleteall` does not fix this - confirmed on real hardware.** It correctly
+wipes the base's entire DECT join table (real sensors included - they came
+back as `deleted` events and had to be paired again), but the wildcard
+commands kept targeting the same stale device ids afterwards regardless.
+Whatever list a wildcard command (`devId: "*"`) actually iterates is neither
+`db/endnodes` nor the DECT join table `delete`/`deleteall` operate on - some
+third, so far unidentified store. Until that is found, there is no known
+way to make this specific log line stop; treat it as harmless and ignore
+it, or if you find the real source, please report it.
 
 ## Writing it back
 

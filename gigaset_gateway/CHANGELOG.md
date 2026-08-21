@@ -7,11 +7,18 @@
   already uses for one device at a time, and the one `endnodes_cleanup`
   (1.0.54) cannot reach, since that edits a bookkeeping file the join table
   does not read from. Where a base carries stale phantom pairings left over
-  by the UART recovery in `docs/RECOVERY.md` mixed in with real ones,
-  `deleteall` clears both - the real sensors then need to be paired again
-  afterwards. No Home Assistant button on purpose, same reasoning as
-  `endnodes_cleanup`: this is destructive enough that it should not be one
-  accidental click away.
+  by the UART recovery in `docs/RECOVERY.md` mixed in with real ones. No
+  Home Assistant button on purpose, same reasoning as `endnodes_cleanup`:
+  this is destructive enough that it should not be one accidental click
+  away.
+- **Confirmed on real hardware: `deleteall` does correctly wipe real
+  pairings (they came back as `deleted` events and needed pairing again),
+  but does *not* stop a base's own wildcard commands (`devId: "*"`,
+  e.g. "turn every known siren off") from still targeting the same stale
+  device ids afterwards.** Whatever list those wildcard commands actually
+  iterate is neither `db/endnodes` nor the DECT join table `delete`/
+  `deleteall` operate on - some third, still-unidentified store. See
+  `docs/RECOVERY.md`.
 
 ## 1.0.56
 
