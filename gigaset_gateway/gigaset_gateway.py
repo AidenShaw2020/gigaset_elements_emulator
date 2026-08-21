@@ -864,10 +864,12 @@ class MqttBridge:
         self,
         config: dict[str, Any],
         command_handler: Callable[[str, str, str, str], None] | None = None,
+        on_connected: Callable[[], None] | None = None,
     ) -> None:
         self.config = config
         self.client = None
         self.command_handler = command_handler
+        self.on_connected = on_connected
         self.base_topic = config.get("base_topic", "gigaset")
         self.discovery_prefix = config.get("discovery_prefix", "homeassistant")
         # Discovery dokumenty jsou retained, staci je poslat jednou.
@@ -918,6 +920,11 @@ class MqttBridge:
         client.subscribe(f"{self.base_topic}/base/+/mode/set")
         client.subscribe(f"{self.base_topic}/+/+/command")
         client.publish(f"{self.base_topic}/availability", "online", retain=True)
+        if self.on_connected is not None:
+            try:
+                self.on_connected()
+            except Exception as error:  # noqa: BLE001
+                print(f"MQTT on_connect chyba: {error}", flush=True)
 
     def _on_message(self, _client, _userdata, message) -> None:
         """Prevest stisk tlacitka v HA na pozadavek do ridici fronty.
@@ -1774,7 +1781,11 @@ class Gateway:
         # take_control_poll_lines().
         self.control_poll_queues: dict[str, list[dict[str, str]]] = {}
         self.control_poll_lock = threading.Lock()
-        self.control_poll_seen = False
+        # Kazdy peer (zakladna), ktery uz alespon jednou uspesne dotazal /gwctl -
+        # drivejsi jediny bool hlasil "kanal navazan" jen pro tu VUBEC prvni
+        # zakladnu v cele session a u kazde dalsi uz mlcel, jako by se
+        # nepripojila (viz note_control_poll).
+        self.control_poll_seen_peers: set[str] = set()
         # Both of these must survive a gateway restart: otherwise every request
         # still listed in the request file would be executed again, and the
         # library name could collide with a version the base already cached.
@@ -1830,10 +1841,41 @@ class Gateway:
         self.mqtt_control_lock = threading.Lock()
         self.mqtt_control_requests: list[dict[str, str]] = []
         self.mqtt_control_counter = 0
-        self.mqtt = MqttBridge(config.get("mqtt", {}), self.request_control_action)
+        self.mqtt = MqttBridge(
+            config.get("mqtt", {}),
+            self.request_control_action,
+            self._replay_all_known_devices,
+        )
         self._ensure_control_library()
         self._ensure_manifest_reload()
         self._check_cre_sources()
+
+    def _replay_all_known_devices(self) -> None:
+        """Obnovit discovery vsech znamych zarizeni hned po pripojeni k MQTT.
+
+        Driv se tohle delalo az kdyz prisel prvni pozadavek od prislusne
+        zakladny po restartu (viz record()) - pro zarizeni, jehoz zakladna uz
+        k teto instanci nikdy nepromluvi (vymenena, offline, jina session
+        brany), to znamenalo, ze nove pridane tlacitko (napr. "forget" v
+        1.0.50) nikdy nedostane, protoze by na tu udalost cekalo navzdy.
+        Tohle bezi pri kazdem pripojeni k MQTT brokeru, nezavisle na tom,
+        jestli a kdy se vubec nejaka zakladna ozve - discovery i zname
+        posledni stavy tak zustanou aktualni i pro osirele zarizeni.
+        """
+        with self.lock:
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for key, device in self.state.items():
+                peer = self.device_base.get(key)
+                if not peer:
+                    continue
+                events = [
+                    item for item in device.values() if isinstance(item, dict) and "sink" in item
+                ]
+                if events:
+                    grouped.setdefault(self.base_name(peer), []).extend(events)
+        for base, events in grouped.items():
+            self.announced_bases.add(base)
+            self.mqtt.announce_known(events, base)
 
     def _ensure_control_library(self) -> None:
         """Nahrat aktualni verzi gwctl a zapsat ji do manifestu kazde zname zakladny.
@@ -2136,7 +2178,7 @@ class Gateway:
             f"{device_type} {device_id}".rstrip(),
             flush=True,
         )
-        if not self.control_poll_seen:
+        if not self.control_poll_seen_peers:
             print(
                 "CONTROL POZOR: základna si zatím ani jednou nepřišla pro příkaz, "
                 f"zkontrolujte dostupnost http://{self.local_address or '?'}:"
@@ -2150,9 +2192,9 @@ class Gateway:
         Prazdna fronta se odbavuje potichu, takze nefunkcni ridici kanal by se
         jinak poznal jen podle toho, ze se nic nedeje.
         """
-        if self.control_poll_seen:
+        if peer in self.control_poll_seen_peers:
             return
-        self.control_poll_seen = True
+        self.control_poll_seen_peers.add(peer)
         print(f"CONTROL POLL kanál navázán z {peer}", flush=True)
 
     def _save_command_state(self) -> None:
