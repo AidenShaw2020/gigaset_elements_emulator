@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.52
+
+- Log which base station every `CRE`/`CONTROL MQTT` line actually concerns.
+  With more than one base connected there was no way to tell from the log
+  which physical base a `pair_start`, a Lua warning, or any other CRE
+  message actually went to or came from - all of it printed identically
+  regardless of base. Also log it when a base-scoped request (pairing,
+  base's own siren, alarm mode...) names a `"base"` that isn't among the
+  currently known ones; that request was silently dropped before with no
+  log line at all.
+
 ## 1.0.51
 
 - Fix new discovery (e.g. the 1.0.50 Forget button) never reaching a device

@@ -2113,6 +2113,12 @@ class Gateway:
         base_hint = str(request.get("base", ""))
         if base_hint:
             peer = self._peer_for_base_key(base_hint)
+            if not peer:
+                print(
+                    f"CONTROL {request.get('id', '')}: základna '{base_hint}' není "
+                    f"mezi známými ({sorted(self.base_keys_seen.values())}) - zahazuji",
+                    flush=True,
+                )
             return [peer] if peer else []
         if len(self.base_keys_seen) <= 1:
             return list(self.base_keys_seen)
@@ -2175,7 +2181,8 @@ class Gateway:
             self.mqtt_control_requests.append(normalized)
         print(
             f"CONTROL MQTT {normalized['id']}: {action} "
-            f"{device_type} {device_id}".rstrip(),
+            f"{device_type} {device_id}".rstrip()
+            + (f" base={base_key}" if base_key else ""),
             flush=True,
         )
         if not self.control_poll_seen_peers:
@@ -2479,8 +2486,13 @@ class Gateway:
         return target
 
     @staticmethod
-    def _print_cre_log(path: str, text: str) -> None:
-        """Vypsat hlaseni z Lua knihoven bezicich na zakladne."""
+    def _print_cre_log(path: str, text: str, peer: str) -> None:
+        """Vypsat hlaseni z Lua knihoven bezicich na zakladne.
+
+        Peer je v hlasce nutny - se dvema a vic zakladnami jinak nejde
+        poznat, ktera z nich konkretni prikaz (napr. pair_start) doopravdy
+        dostala.
+        """
         match = CRE_DIAG_RE.match(path)
         if match is None:
             return
@@ -2490,7 +2502,7 @@ class Gateway:
             payload = {}
         location = str(payload.get("location", "")).rsplit("/", 1)[-1]
         message = payload.get("message", text)
-        print(f"CRE {match.group('level').upper()} {location} {message}", flush=True)
+        print(f"CRE {match.group('level').upper()} {peer} {location} {message}", flush=True)
 
     def record(self, method: str, path: str, body: bytes, peer: str) -> None:
         if method == "POST" and path.startswith("/api/v1/bs/sink/diagnostic"):
@@ -2511,7 +2523,7 @@ class Gateway:
         with self.log_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        self._print_cre_log(path, text)
+        self._print_cre_log(path, text, peer)
         if path.startswith("/api/v1/bs/sink/unknown"):
             # Sem zakladna hlasi prikaz, kteremu uzel nerozumel (ule/error.c).
             print(f"UZEL ODMÍTL {peer} {text.strip()}", flush=True)
