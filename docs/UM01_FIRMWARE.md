@@ -51,7 +51,7 @@ remove the battery first so the two supplies cannot fight. `SWCLK`, `SWDIO` and
 `RESETn` are reachable from vias on the underside that lead to chip pins 25, 26
 and 9, which is easier to solder than the 0.5 mm pitch of the package itself.
 
-![Wiring used to read the sensor](docs/um01_swd_wiring.jpg)
+![Wiring used to read the sensor](um01_swd_wiring.jpg)
 
 Wire colours in the photo:
 
@@ -117,7 +117,7 @@ the debug pins off after boot, because the chip never gets to run.
 ## Extracting the command table
 
 ```
-python extract_um01_commands.py um01_flash.bin
+python tools/extract_um01_commands.py um01_flash.bin
 ```
 
 The commands are plain ASCII, laid out in one table next to the event names.

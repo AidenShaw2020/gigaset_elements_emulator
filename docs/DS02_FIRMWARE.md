@@ -26,7 +26,7 @@ Same pins as `um01`, because it's the same package: `PF0` = chip pin 25 =
 [UM01_FIRMWARE.md](UM01_FIRMWARE.md#finding-the-debug-pins) for the QFN pin
 counting convention and the mistake that costs hours if you get it wrong.
 
-![Wiring used to read the sensor](docs/ds02_swd_wiring.jpg)
+![Wiring used to read the sensor](ds02_swd_wiring.jpg)
 
 Wire colours in the photo, same convention as the `um01` photo: white
 `SWCLK`, yellow `SWDIO`, black `GND`, red `3.3 V`.

@@ -5,7 +5,7 @@ factory reset does not fix it:
 
 - **A wrong or mismatched CRE manifest was served to it.** The base deletes
   every Lua file its manifest does not name (see "The manifest belongs to
-  your base, not to this repository" in the [README](README.md)). If that
+  your base, not to this repository" in the [README](../README.md)). If that
   happened with the wrong manifest, the base's own automation rules are
   gone from its filesystem and cannot be downloaded again - the cloud that
   used to hold them is shut down.
@@ -89,8 +89,8 @@ same read-only procedure as extracting a manifest (see the README), just
 kept as a full image instead of only the CRE manifest:
 
 ```sh
-python gigaset_uart_dump.py --port COM3 --output donor_flash.bin
-python gigaset_uart_dump.py --port COM3 --output broken_flash.bin
+python tools/gigaset_uart_dump.py --port COM3 --output donor_flash.bin
+python tools/gigaset_uart_dump.py --port COM3 --output broken_flash.bin
 ```
 
 Record the size (must be exactly 8,388,608 bytes) and SHA-256 of each dump
@@ -157,7 +157,7 @@ broken to ever reach that endpoint on its own.
    erase block boundary. Repack to the real block size:
 
    ```sh
-   python repack_jffs2_4k.py fs.bin fs_4k.bin
+   python tools/repack_jffs2_4k.py fs.bin fs_4k.bin
    ```
 
 4. Unpack the repacked image again (independently, with `jefferson`) and
@@ -168,7 +168,7 @@ broken to ever reach that endpoint on its own.
    **broken unit's own** Factory and Env bytes:
 
    ```sh
-   python build_identity_preserving_image.py \
+   python tools/build_identity_preserving_image.py \
      --base1 donor_flash.bin \
      --target-dump broken_flash.bin \
      --fs2 fs2_4k.bin \
@@ -206,7 +206,7 @@ Physically switch the target into the ROM UART bootloader the same way as
 for a dump (see the README), then:
 
 ```sh
-python gigaset_uart_flash.py \
+python tools/gigaset_uart_flash.py \
   --port COM3 \
   --loader 452fp.bin \
   --image recovery_image.bin \
@@ -226,7 +226,7 @@ gateway's self-signed server certificate with a TLS `unknown_ca` alert when
 the connection negotiates TLS 1.3 - capping the server at TLS 1.2 with a
 relaxed cipher policy worked around this on the unit that prompted this
 procedure. The gateway already does this by default; see the
-[changelog](addon/gigaset_gateway/CHANGELOG.md) for details. The underlying
+[changelog](../addon/gigaset_gateway/CHANGELOG.md) for details. The underlying
 reason a fresh TLS 1.3 handshake behaves differently on this class of unit
 is not fully understood - if capping the TLS version does not help on your
 unit, the cause is likely something else and worth reporting.
