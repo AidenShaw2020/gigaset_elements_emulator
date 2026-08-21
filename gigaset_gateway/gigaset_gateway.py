@@ -17,6 +17,8 @@ ENDNODE_RE = re.compile(
 )
 ENDNODE_ID_RE = re.compile(r"^[0-9a-fA-F]{10}$")
 ENDNODE_TYPE_RE = re.compile(r"^[a-z]{2}[0-9]{2}$")
+# Strednikem oddeleny seznam device_id pro "endnodes_cleanup" - viz tam.
+ENDNODE_ID_LIST_RE = re.compile(r"^[0-9a-f]{10}(;[0-9a-f]{10})*$")
 # Spolecne jmeno z certifikatu zakladny, zaroven jeji identifikator.
 BASE_IDENTITY_RE = re.compile(r"^[0-9a-f]{16,64}$")
 # Prikazy, ktere ULE koncovy uzel skutecne zna.  "moving" a "closed" ze
@@ -290,6 +292,15 @@ CONTROL_ACTIONS = {
     # volal jen s nazvem udalosti; firmware vsude predava jeste jeden argument
     # (doslova "unused_parameter"), bez nej se udalost vubec nerozesle.
     "alarm_ack": ("localevent", lambda _device_id: "alarm.intrusion.ack"),
+    # Odstraneni konkretnich zaznamu z /mnt/data/db/endnodes primo na
+    # zakladne, bez ULE/DECT prikazu - viz gwctl "cleanup" handler. Pro
+    # zaznamy, ktere v realne DECT tabulce spojeni uz nejsou (typicky po
+    # obnove flash z jine zakladny, viz RECOVERY.md), "delete"/"deleteall"
+    # nic neudela, protoze pracuji jen s tou DECT tabulkou, ne s timhle
+    # souborem. Seznam device_id (strednikem oddeleny) se zada polozkou
+    # "command" v control.json - zamerne neni tlacitko v HA, protoze cil
+    # se pokazde lisi.
+    "endnodes_cleanup": ("cleanup", lambda _device_id: ""),
     # Prepnuti rezimu alarmu.  Kazdy rezim ma vlastni akci, takze se nemusi
     # validovat volny text - mnozina povolenych hodnot je dana uz tim, ktere
     # akce vubec existuji.
@@ -521,12 +532,65 @@ local function localevent(label, event, dev, devtype)
     local_event_send(event, "unused_parameter")
 end
 
+-- Odstrani konkretni zaznamy z /mnt/data/db/endnodes primo v souboru, bez
+-- ULE/DECT prikazu (ktery na zaznamy, co uz nejsou v realne DECT tabulce,
+-- stejne nedosahne - viz "delete"/"deleteall"). "ids" je strednikem
+-- oddeleny seznam device_id; kazdy se odstrani jen pokud v souboru
+-- doopravdy je (%b{} spolehlive zachyti cely blok dane zavorky).  Zapis je
+-- atomicky pres docasny soubor + os.rename, takze puvodni soubor zustane
+-- nedotceny, kdyby cokoliv selhalo pred prejmenovanim.
+local function clean_endnodes(label, ids)
+    local path = "/mnt/data/db/endnodes"
+    local handle = io.open(path, "r")
+    if handle == nil then
+        log("gwctl {} [soubor {} nenalezen]", label, path)
+        return
+    end
+    local content = handle:read("*a") or ""
+    handle:close()
+
+    local removed = 0
+    for id in string.gmatch(ids, "[^;]+") do
+        local pattern = '%s*"' .. id .. '"%s*:%s*%b{}%s*,?'
+        local new_content, count = string.gsub(content, pattern, "")
+        if count > 0 then
+            content = new_content
+            removed = removed + count
+        end
+    end
+    if removed == 0 then
+        log("gwctl {} [v {} nic k odstraneni]", label, path)
+        return
+    end
+    -- Kdyby smazany zaznam byl posledni v souboru, predchozimu zustane
+    -- osirela carka pred zaverecnou zavorkou - to by byl uz neplatny JSON.
+    content = string.gsub(content, ",(%s*})%s*$", "%1")
+
+    local tmp_path = path .. ".tmp"
+    local out = io.open(tmp_path, "w")
+    if out == nil then
+        log("gwctl {} [nelze zapsat {}]", label, tmp_path)
+        return
+    end
+    out:write(content)
+    out:close()
+    os.rename(tmp_path, path)
+    log("gwctl {} odstraneno {} zaznamu z {}", label, removed, path)
+end
+
+local function cleanup(label, argument, dev, devtype)
+    if argument ~= "" then
+        clean_endnodes(label, argument)
+    end
+end
+
 local HANDLERS = {
     ule = ule,
     pairon = pairon,
     endnode = endnode,
     alarmmode = alarmmode,
     localevent = localevent,
+    cleanup = cleanup,
 }
 
 local function split(line)
@@ -848,6 +912,9 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
     if action == "endnode_command":
         if ENDNODE_COMMAND_RE.fullmatch(command) is None:
             raise ValueError(f"Control request {request_id} has invalid command")
+    elif action == "endnodes_cleanup":
+        if ENDNODE_ID_LIST_RE.fullmatch(command) is None:
+            raise ValueError(f"Control request {request_id} has invalid endnode id list")
     else:
         command = ""
     return {
