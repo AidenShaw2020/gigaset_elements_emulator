@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.55
+
+- Add `endnodes_dump`, a `control.json` action that prints a base's current
+  `/mnt/data/db/endnodes` content to the add-on's own log (`DEBUG UPLOAD`),
+  unchanged, no UART needed. `endnodes_cleanup` (1.0.54) reported removing
+  4 entries on one unit, but 3 of the corresponding devices kept getting
+  the same rejected commands afterwards - this exists to see the file's
+  actual current content directly instead of guessing whether the edit
+  applied, missed a formatting difference, or the real source of those
+  commands is a separate store entirely.
+
 ## 1.0.54
 
 - Add `endnodes_cleanup`, a `control.json`-only action that removes specific
