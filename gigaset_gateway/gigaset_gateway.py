@@ -736,28 +736,14 @@ def manifest_from_inventory(listing: str) -> dict[str, Any]:
     }
 
 
-def servable_manifest(config: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
-    """Manifest omezeny na polozky, ktere brana umi obslouzit."""
-    reduced: dict[str, Any] = {}
-    for group, entries in manifest.items():
-        if not isinstance(entries, dict):
-            reduced[group] = entries
-            continue
-        reduced[group] = {
-            key: url
-            for key, url in entries.items()
-            if cre_source(config, url.rsplit("/", 1)[-1]) is not None
-        }
-    return reduced
-
-
-def local_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    cre_manifest = load_config(Path(config["cre_manifest_file"]))
-    if config.get("bootstrap_manifest"):
-        # POZOR: zakladna soubory, ktere v manifestu nejsou, ze sveho disku
-        # smaze - vcetne pravidel, ktera uz z vypnuteho cloudu nikdo neziska.
-        # Necely manifest se proto smi poslat jen tomu, kdo o tom vi a ma zalohu.
-        cre_manifest = servable_manifest(config, cre_manifest)
+def local_configuration(
+    config: dict[str, Any], manifest_path: Path
+) -> tuple[dict[str, Any], str]:
+    # POZOR: zakladna soubory, ktere v manifestu nejsou, ze sveho disku smaze -
+    # vcetne pravidel, ktera uz z vypnuteho cloudu nikdo neziska. Proto se
+    # manifest_path posila cely a beze zmeny, presne jak ho uzivatel dodal pro
+    # tuhle konkretni zakladnu (viz cre_manifest_map).
+    cre_manifest = load_config(manifest_path)
     base_configuration = load_config(Path(config["base_configuration_file"]))
     canonical = json.dumps(
         {"cre": cre_manifest, "configuration": base_configuration},
@@ -868,7 +854,7 @@ class MqttBridge:
     def __init__(
         self,
         config: dict[str, Any],
-        command_handler: Callable[[str, str, str], None] | None = None,
+        command_handler: Callable[[str, str, str, str], None] | None = None,
     ) -> None:
         self.config = config
         self.client = None
@@ -942,7 +928,7 @@ class MqttBridge:
         parts = message.topic.split("/")
         try:
             if len(parts) == 5 and parts[1] == "base" and parts[3] == "control":
-                self.command_handler(parts[4], "", "")
+                self.command_handler(parts[4], "", "", parts[2])
             elif len(parts) == 5 and parts[1] == "base" and parts[3:5] == ["mode", "set"]:
                 mode = message.payload.decode("utf-8", "replace").strip().lower()
                 # Doruceni prikazu trva desitky sekund.  Stav se proto nastavi
@@ -951,7 +937,7 @@ class MqttBridge:
                 # nasledne prepise - i kdyby zmena neprosla.
                 if mode in ALARM_MODES:
                     self.publish(f"{self.base_topic}/base/{parts[2]}/mode", mode)
-                self.command_handler(f"mode_{mode}", "", "")
+                self.command_handler(f"mode_{mode}", "", "", parts[2])
             elif len(parts) == 4 and parts[3] == "command":
                 action = message.payload.decode("utf-8", "replace").strip()
                 if action.startswith("{"):
@@ -964,7 +950,9 @@ class MqttBridge:
                         f"{parts[0]}/{parts[1]}/{parts[2]}/pattern",
                         action[len("pattern_") :],
                     )
-                self.command_handler(action, parts[1], parts[2])
+                # Tohle tema neni vazane na zakladnu (jen typ/id zarizeni), takze
+                # se cilova zakladna dohleda az podle device_base.
+                self.command_handler(action, parts[1], parts[2], "")
         except Exception as error:  # noqa: BLE001
             print(f"MQTT COMMAND chyba: {error}", flush=True)
 
@@ -1749,7 +1737,21 @@ class Gateway:
         self.control_dir = (
             Path(control["library_dir"]) if control.get("library_dir") else None
         )
-        self.control_manifest_path = Path(config["cre_manifest_file"])
+        # Manifest kazde zakladny zvlast (base_key -> cesta), sestaveny v run.sh
+        # ze souboru cre_manifest.<base_key>.json - viz _manifest_path_for().
+        # Spatny manifest zakladne nenavratne smaze jeji vlastni pravidla, proto
+        # tady zadny fallback na "vychozi soubor pro kohokoliv neznameho" neni.
+        self.control_manifest_paths: dict[str, Path] = {
+            key: Path(value)
+            for key, value in config.get("cre_manifest_map", {}).items()
+        }
+        # Kam ukladat manifest, ktery si zakladna sama nahlasila - jen diagnostika
+        # / zaloha pro uzivatele, ne neco, co se zakladne posila zpet, takze tu
+        # fallback na spolecny soubor vadit nemuze.
+        self.base_manifest_paths: dict[str, Path] = {
+            key: Path(value)
+            for key, value in config.get("base_manifest_map", {}).items()
+        }
         self.control_poll_url = str(control.get("poll_url", ""))
         self.control_poll_port = int(control.get("poll_port", CONTROL_POLL_PORT))
         self.control_poll_interval = int(
@@ -1758,7 +1760,10 @@ class Gateway:
         # Adresa, na kterou se zakladna dovolala.  Bez vyplneneho poll_url se z ni
         # sklada URL ridiciho kanalu, takze ji nikdo nemusi zadavat rucne.
         self.local_address = ""
-        self.control_poll_queue: list[dict[str, str]] = []
+        # Fronta cekajicich prikazu pro /gwctl, samostatna pro kazdou zakladnu (IP
+        # peeru), aby prikaz urceny pro jednu zakladnu neskoncil u druhe - viz
+        # take_control_poll_lines().
+        self.control_poll_queues: dict[str, list[dict[str, str]]] = {}
         self.control_poll_lock = threading.Lock()
         self.control_poll_seen = False
         # Both of these must survive a gateway restart: otherwise every request
@@ -1788,11 +1793,22 @@ class Gateway:
         # prepsal vychozi hodnotou z konfigurace zakladny a HA by ukazoval
         # rezim, ve kterem zakladna vubec neni.
         self.alarm_modes: dict[str, str] = dict(command_state.get("alarm_modes", {}))
-        # Otisk manifestu, ktery uz zakladna dostala.  Nova knihovna se k ni
-        # jinak nedostane - konfiguraci cte jen na vyzvu.
-        self.manifest_digest = str(command_state.get("manifest_digest", ""))
-        self.control_commands: list[dict[str, Any]] = []
+        # Otisk manifestu kazde zakladny (cesta k souboru -> otisk), ktery uz
+        # dostala.  Nova knihovna se k ni jinak nedostane - konfiguraci cte jen
+        # na vyzvu.  Klicovano cestou, ne peerem/base_key: nekolik peeru muze
+        # sdilet stejny soubor, a cesta jednoznacne prezije i pripadnou zmenu
+        # base_id.
+        self.manifest_digests: dict[str, str] = dict(
+            command_state.get("manifest_digests", {})
+        )
+        # Udrzovaci prikazy (napr. pozadavek na reload konfigurace) cekajici na
+        # kazdou zakladnu zvlast - viz control_poll_queues vyse, stejny duvod.
+        self.control_commands_by_peer: dict[str, list[dict[str, Any]]] = {}
         self.announced_bases: set[str] = set()
+        # Ke kterym peeru (zakladne) naposledy patrilo dane zarizeni - "typ/id" ->
+        # IP peeru. Umoznuje smerovat prikaz pro konkretni senzor na tu zakladnu,
+        # ktera od nej naposledy videla udalost, misto aby se posilal naslepo.
+        self.device_base: dict[str, str] = dict(command_state.get("device_base", {}))
         # Vychozi rezim alarmu z konfigurace, kterou zakladne servirujeme.
         try:
             base_configuration = load_config(Path(config["base_configuration_file"]))
@@ -1811,11 +1827,15 @@ class Gateway:
         self._check_cre_sources()
 
     def _ensure_control_library(self) -> None:
-        """Nahrat na zakladnu aktualni verzi gwctl, kdyz se lisi od te nasazene.
+        """Nahrat aktualni verzi gwctl a zapsat ji do manifestu kazde zname zakladny.
 
         Knihovna uz neobsahuje jednotlive prikazy, takze se meni jen pri zmene
-        sablony nebo konfigurace pollingu.  Kazda zmena stoji zakladnu kompletni
-        reload CRE (16-26 s), proto se dela jen kdyz je opravdu potreba.
+        sablony nebo konfigurace pollingu, a jeji obsah je pro vsechny zakladny
+        stejny (stejna adresa doplnku, stejne URL rizeni) - generuje se tedy
+        jen jednou. Zaznam v manifestu se ale musi zapsat do souboru KAZDE
+        zname zakladny zvlast, kazda ma svuj vlastni (viz control_manifest_paths).
+        Kazda zmena stoji dotcenou zakladnu kompletni reload CRE (16-26 s),
+        proto se dela jen kdyz je opravdu potreba.
         """
         if not self.control_enabled or self.control_dir is None:
             return
@@ -1827,23 +1847,33 @@ class Gateway:
             url = f"http://{self.local_address}:{self.control_poll_port}/gwctl"
         source = control_lua_source(url, self.control_poll_interval)
         current = self.control_dir / f"{self.control_library}-{self.control_serial}.lua"
-        if current.exists() and current.read_text(encoding="utf-8") == source:
-            return
-        self.control_serial += 1
-        filename = f"{self.control_library}-{self.control_serial}.lua"
-        self.control_dir.mkdir(parents=True, exist_ok=True)
-        (self.control_dir / filename).write_text(source, encoding="utf-8")
+        if not (current.exists() and current.read_text(encoding="utf-8") == source):
+            self.control_serial += 1
+            filename = f"{self.control_library}-{self.control_serial}.lua"
+            self.control_dir.mkdir(parents=True, exist_ok=True)
+            (self.control_dir / filename).write_text(source, encoding="utf-8")
+            self._save_command_state()
+            print(f"CONTROL nasazuji {filename}", flush=True)
 
-        manifest = load_config(self.control_manifest_path)
-        manifest.setdefault("endnode_libraries", {})[self.control_library] = (
+        filename = f"{self.control_library}-{self.control_serial}.lua"
+        entry_url = (
             f"/api/v1/bs01/configuration/libs/{self.control_library}/{filename}"
         )
-        atomic_json_write(self.control_manifest_path, manifest)
-        self._save_command_state()
-        print(f"CONTROL nasazuji {filename}", flush=True)
-        self._request_reload(f"control-{self.control_serial}")
+        for path in set(self.control_manifest_paths.values()):
+            try:
+                manifest = load_config(path)
+            except (OSError, json.JSONDecodeError):
+                continue
+            libraries = manifest.setdefault("endnode_libraries", {})
+            if libraries.get(self.control_library) == entry_url:
+                continue
+            libraries[self.control_library] = entry_url
+            atomic_json_write(path, manifest)
+            self._request_reload(
+                f"control-{self.control_serial}", self._peers_for_manifest_path(path)
+            )
 
-    def store_base_inventory(self, document: bytes) -> bool:
+    def store_base_inventory(self, document: bytes, peer: str) -> bool:
         """Slozit manifest z vypisu souboru, ktere zakladna ma na disku."""
         manifest = manifest_from_inventory(document.decode("utf-8", "replace"))
         libraries = manifest.get("endnode_libraries", {})
@@ -1859,42 +1889,29 @@ class Gateway:
             + ", ".join(f"{group} {len(manifest[group])}" for group in CRE_GROUPS),
             flush=True,
         )
+        # Jen zaloha/diagnostika pro uzivatele - zivy manifest se odsud uz
+        # neprebira automaticky. Doplnek dnes nenastartuje bez vlastniho
+        # manifestu kazde zakladny (viz run.sh), takze zavadeci rezim, ktery
+        # kdysi manifest slozil z tohodle vypisu za behu, uz neni potreba.
         self.store_base_manifest(
-            json.dumps(manifest).encode("utf-8"), source="inventáře"
+            json.dumps(manifest).encode("utf-8"), peer, source="inventáře"
         )
-        self._adopt_base_manifest(manifest)
         return True
 
-    def _adopt_base_manifest(self, manifest: dict[str, Any]) -> None:
-        """Prejit na manifest zakladny hned, bez cekani na restart.
-
-        Zustavaji jen polozky, jejichz soubor brana umi obslouzit - tedy vlastni
-        knihovny doplnku a gwctl.  Vsechno ostatni si zakladna uz na disku ma.
-        """
-        try:
-            live = load_config(self.control_manifest_path)
-        except (OSError, json.JSONDecodeError):
-            return
-        if not self.config.get("bootstrap_manifest"):
-            return
-        merged = json.loads(json.dumps(manifest))
-        libraries = merged.setdefault("endnode_libraries", {})
-        for key, url in live.get("endnode_libraries", {}).items():
-            if cre_source(self.config, url.rsplit("/", 1)[-1]) is not None:
-                libraries[key] = url
-        atomic_json_write(self.control_manifest_path, merged)
-        # Zavadeci rezim uz nema co delat, manifest teto zakladny je znamy.
-        self.config["bootstrap_manifest"] = False
-        print("CONTROL nasazuji manifest základny", flush=True)
-        self._ensure_manifest_reload()
-
-    def store_base_manifest(self, document: bytes, source: str = "základny") -> bool:
+    def store_base_manifest(
+        self, document: bytes, peer: str, source: str = "základny"
+    ) -> bool:
         """Ulozit manifest, ktery o sobe poslala zakladna.
 
         Pouzije se az pri pristim startu, takze bezici konfiguraci nerozhodi.
-        Soubor dodany uzivatelem se nikdy neprepisuje.
+        Soubor dodany uzivatelem se nikdy neprepisuje.  Ma-li tahle zakladna
+        svuj vlastni cilovy soubor (base_manifest_map), pouzije se; jinak
+        spolecny vychozi - jde jen o diagnostiku/zalohu, ne o neco, co se
+        zakladne posila zpet, takze spolecny fallback tu nevadi.
         """
-        target = self.config.get("base_manifest_file")
+        target = self.base_manifest_paths.get(base_key(peer)) or self.config.get(
+            "base_manifest_file"
+        )
         if not target:
             return False
         try:
@@ -1919,94 +1936,87 @@ class Gateway:
         return True
 
     def _check_cre_sources(self) -> None:
-        """Ohlasit polozky manifestu, ktere brana neumi obslouzit.
+        """Ohlasit polozky manifestu kazde zname zakladny, ktere brana neumi obslouzit.
 
         Na chybejici soubor zakladna reaguje tim, ze si konfiguraci stahuje
         porad dokola a nikdy ji nepotvrdi - bez tohoto varovani to vypada, ze se
         nedeje nic.
         """
-        try:
-            manifest = load_config(self.control_manifest_path)
-        except (OSError, json.JSONDecodeError):
-            return
-        missing = sorted(
-            {
-                url.rsplit("/", 1)[-1]
-                for name, group in manifest.items()
-                if isinstance(group, dict)
-                for key, url in group.items()
-                # gwctl si brana generuje sama, az kdyz zna svoji adresu.
-                if not (name == "endnode_libraries" and key == self.control_library)
-                and cre_source(self.config, url.rsplit("/", 1)[-1]) is None
-            }
-        )
-        if not missing:
-            return
-        if self.config.get("manifest_from_base"):
-            # Manifest je od teto zakladny, takze si tyhle soubory nese sama.
+        for path in set(self.control_manifest_paths.values()):
+            try:
+                manifest = load_config(path)
+            except (OSError, json.JSONDecodeError):
+                continue
+            missing = sorted(
+                {
+                    url.rsplit("/", 1)[-1]
+                    for name, group in manifest.items()
+                    if isinstance(group, dict)
+                    for key, url in group.items()
+                    # gwctl si brana generuje sama, az kdyz zna svoji adresu.
+                    if not (name == "endnode_libraries" and key == self.control_library)
+                    and cre_source(self.config, url.rsplit("/", 1)[-1]) is None
+                }
+            )
+            if not missing:
+                continue
             print(
-                f"Z firmwaru chybí {len(missing)} souborů. Základna je má na sobě, "
-                "potřeba budou až po továrním resetu.",
+                f"POZOR ({path}): chybí soubory z firmwaru " + ", ".join(missing) + " - "
+                "základna si bude konfiguraci stahovat pořád dokola",
                 flush=True,
             )
-            return
-        print(
-            "POZOR: chybí soubory z firmwaru " + ", ".join(missing) + " - "
-            "základna si bude konfiguraci stahovat pořád dokola",
-            flush=True,
-        )
 
-    def _request_reload(self, reason: str) -> None:
-        """Vyzvat zakladnu, aby si znovu nacetla konfiguraci.
+    def _request_reload(self, reason: str, peers: list[str] | None = None) -> None:
+        """Vyzvat zakladnu (nebo zakladny), aby si znovu nactly konfiguraci.
 
-        Dokud nevime, ze mame manifest teto konkretni zakladny, se o to nesmi
-        zadat: zadala by si soubory, ktere nikdy nemela, dostala 404 a ptala by
-        se porad dokola.  Do te doby brana funguje jen ke cteni, coz je vsechno,
-        co jde delat bez vlastniho kodu na zakladne.
+        `peers=None` znamena "vsechny zatim zname zakladny" - vhodne, kdyz
+        volajici jeste neresi konkretni manifest (napr. rucne zadany
+        pozadavek bez "base"); s jednou zakladnou se mnozina zredukuje na tu
+        jednu, takze se chova stejne jako drive.
         """
-        if not self.config.get("manifest_is_own", True):
-            print(
-                f"CONTROL {reason} - základnu ale nežádám o načtení konfigurace, "
-                "dokud nemám její vlastní manifest",
-                flush=True,
-            )
-            return
-        self.control_commands.append(
-            {
-                "id": f"reload-{reason}",
-                "type": "raw",
-                "message": {"type": "configuration-changed"},
-            }
-        )
+        command = {
+            "id": f"reload-{reason}",
+            "type": "raw",
+            "message": {"type": "configuration-changed"},
+        }
+        targets = peers if peers is not None else list(self.base_keys_seen)
+        for target in targets:
+            self.control_commands_by_peer.setdefault(target, []).append(dict(command))
 
     def _ensure_manifest_reload(self) -> None:
-        """Vyzvat zakladnu k nacteni konfigurace, kdyz se zmenil CRE manifest.
+        """Vyzvat kazdou znamou zakladnu k nacteni konfigurace, zmenil-li se jeji CRE manifest.
 
         Zakladna si konfiguraci sama nevyzvedava, takze bez teto zpravy by na ni
-        nova knihovna z aktualizace doplnku nikdy nedorazila.
+        nova knihovna z aktualizace doplnku nikdy nedorazila. Kazdy soubor
+        manifestu se sleduje zvlast (viz manifest_digests) a reload se zada
+        jen u zakladen, ktere ho skutecne pouzivaji.
         """
-        try:
-            manifest = load_config(self.control_manifest_path)
-        except (OSError, json.JSONDecodeError):
-            return
-        digest = hashlib.sha256(
-            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()[:16]
-        if digest == self.manifest_digest:
-            return
-        self.manifest_digest = digest
-        self._save_command_state()
-        already_queued = any(
-            item.get("message", {}).get("type") == "configuration-changed"
-            for item in self.control_commands
-        )
-        if already_queued:
-            return
-        print("CONTROL manifest CRE se změnil, žádám o reload", flush=True)
-        self._request_reload(f"manifest-{digest}")
+        for path in set(self.control_manifest_paths.values()):
+            try:
+                manifest = load_config(path)
+            except (OSError, json.JSONDecodeError):
+                continue
+            digest = hashlib.sha256(
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()[:16]
+            digest_key = str(path)
+            if digest == self.manifest_digests.get(digest_key):
+                continue
+            self.manifest_digests[digest_key] = digest
+            self._save_command_state()
+            peers = self._peers_for_manifest_path(path)
+            already_queued = any(
+                item.get("message", {}).get("type") == "configuration-changed"
+                for peer in peers
+                for item in self.control_commands_by_peer.get(peer, [])
+            )
+            if already_queued:
+                continue
+            print(f"CONTROL manifest CRE ({path}) se změnil, žádám o reload", flush=True)
+            self._request_reload(f"manifest-{digest}", peers)
 
-    def take_control_poll_lines(self) -> str:
-        """Vybrat cekajici prikazy pro gwctl. Ctou se jen jednou."""
+    def take_control_poll_lines(self, peer: str) -> str:
+        """Vybrat cekajici prikazy pro gwctl teto konkretni zakladny. Ctou se jen jednou."""
         # Dotaz od zakladny je posledni okamzik, kdy jeste jde zachytit
         # pozadavek z MQTT nebo ze souboru - jinak by cekal na dalsi kolo.
         with self.command_lock:
@@ -2015,8 +2025,7 @@ class Gateway:
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 print(f"Nelze zpracovat control požadavky: {exc}", flush=True)
         with self.control_poll_lock:
-            queued = self.control_poll_queue
-            self.control_poll_queue = []
+            queued = self.control_poll_queues.pop(peer, [])
         if not queued:
             return ""
         for request in queued:
@@ -2027,8 +2036,39 @@ class Gateway:
             )
         return "".join(control_poll_line(request) + "\n" for request in queued)
 
+    def _resolve_target_peers(self, request: dict[str, str]) -> list[str]:
+        """Na ktere zakladny (IP peeru) se ma pozadavek doruvcit.
+
+        Pozadavky vazane na konkretni zarizeni jdou tam, kde to zarizeni bylo
+        naposledy videno; kdyz to nevime (nove zarizeni), rozeslou se na vsechny
+        zname zakladny - pro zakladnu, ktera to zarizeni nema sparovane, je to
+        neskodne, protoze nema komu ULE prikaz predat. Pozadavky vazane na
+        zakladnu (parovani, sirena zakladny, rezim alarmu...) potrebuji
+        explicitni cil, jakmile je znama vic nez jedna zakladna.
+        """
+        action = request.get("action", "")
+        device_id = request.get("device_id", "")
+        device_type = request.get("device_type", "")
+        if action in CONTROL_ACTIONS_NEEDING_DEVICE and device_id:
+            peer = self.device_base.get(f"{device_type}/{device_id}")
+            if peer:
+                return [peer]
+            return list(self.base_keys_seen)
+        base_hint = str(request.get("base", ""))
+        if base_hint:
+            peer = self._peer_for_base_key(base_hint)
+            return [peer] if peer else []
+        if len(self.base_keys_seen) <= 1:
+            return list(self.base_keys_seen)
+        print(
+            f"CONTROL {request.get('id', '')}: akce {action} nemá určenou "
+            'základnu a je jich známo víc - zahazuji, přidejte pole "base"',
+            flush=True,
+        )
+        return []
+
     def request_control_action(
-        self, action: str, device_type: str, device_id: str
+        self, action: str, device_type: str, device_id: str, base_key: str = ""
     ) -> None:
         """Zaradit pozadavek z MQTT do stejne fronty jako soubor s pozadavky."""
         with self.mqtt_control_lock:
@@ -2044,6 +2084,7 @@ class Gateway:
             except ValueError as error:
                 print(f"CONTROL MQTT odmítnuto: {error}", flush=True)
                 return
+            normalized["base"] = base_key
             self.mqtt_control_requests.append(normalized)
         print(
             f"CONTROL MQTT {normalized['id']}: {action} "
@@ -2079,7 +2120,8 @@ class Gateway:
                 "base_ids": self.base_ids,
                 "base_keys_seen": self.base_keys_seen,
                 "alarm_modes": self.alarm_modes,
-                "manifest_digest": self.manifest_digest,
+                "manifest_digests": self.manifest_digests,
+                "device_base": self.device_base,
             },
         )
 
@@ -2102,9 +2144,14 @@ class Gateway:
 
         Adresa je jedina hodnota, kterou zna kazda instance brany od prvniho
         pozadavku, takze vsechny skonci u stejneho zarizeni v Home Assistantu.
-        Rucne zadane ID ma prednost, kdyby zakladna adresu presto zmenila.
+        Rucne zadane ID ma prednost, kdyby zakladna adresu presto zmenila -
+        ale jen dokud jde o jedinou znamou zakladnu.  Se dvema fyzickymi
+        zakladnami by "base_id" obe tise slilo do jedne entity v HA, proto se
+        pro kazdeho dalsiho peera pouzije zase adresa (viz record()).
         """
-        return self.base_id or base_key(peer)
+        if self.base_id and (not self.base_keys_seen or set(self.base_keys_seen) <= {peer}):
+            return self.base_id
+        return base_key(peer)
 
     def remember_base_identity(self, peer: str, identity: str) -> None:
         """Zapamatovat ID zakladny z certifikatu nebo z hlaseni o pravidle.
@@ -2168,7 +2215,13 @@ class Gateway:
                 continue
             if not str(item.get("id", "")):
                 continue
-            fresh.append(normalize_control_request(item))
+            normalized = normalize_control_request(item)
+            # Volitelne pole "base" (base_key) rika, ktere zakladne pozadavek
+            # patri - potreba jen u akci vazanych na zakladnu, jakmile je jich
+            # znamo vic nez jedna. normalize_control_request ho nezna, tak se
+            # doplnuje az sem.
+            normalized["base"] = str(item.get("base", ""))
+            fresh.append(normalized)
 
         with self.mqtt_control_lock:
             queued = self.mqtt_control_requests
@@ -2181,7 +2234,9 @@ class Gateway:
             return
 
         with self.control_poll_lock:
-            self.control_poll_queue.extend(fresh)
+            for request in fresh:
+                for target_peer in self._resolve_target_peers(request):
+                    self.control_poll_queues.setdefault(target_peer, []).append(request)
         for request in fresh:
             self.handled_control_ids.add(request["id"])
         self._save_command_state()
@@ -2244,7 +2299,58 @@ class Gateway:
             known_ids.add(command_id)
         return pending
 
-    def next_event_command(self) -> dict[str, Any] | None:
+    def _matches_peer(self, item: dict[str, Any], peer: str) -> bool:
+        """Patri tenhle pozadavek zakladne s danou IP?
+
+        Konkretni zarizeni se resi podle toho, ktera zakladna od nej naposledy
+        videla udalost; udrzovaci akce podle volitelneho pole "base" (base_key).
+        Kdyz neni k dispozici ani jedno a je znama nejvyse jedna zakladna, chova
+        se to jako dnes - proslo by vsechno.  Jakmile je znama vic nez jedna
+        zakladna a cil se neda urcit, radeji pozadavek jeste chvili pockat, nez
+        ho poslat nekomu nespravnemu.
+        """
+        device_id = item.get("device_id")
+        if device_id:
+            mapped = self.device_base.get(f"{item.get('device_type', '')}/{device_id}")
+            if mapped:
+                return mapped == peer
+        base_hint = item.get("base", "")
+        if base_hint:
+            return self._peer_for_base_key(base_hint) == peer
+        return len(self.base_keys_seen) <= 1
+
+    def _peer_for_base_key(self, key: str) -> str | None:
+        for candidate_peer, seen_key in self.base_keys_seen.items():
+            if seen_key == key:
+                return candidate_peer
+        return None
+
+    def _manifest_path_for(self, peer: str) -> Path | None:
+        """Ktery soubor CRE manifestu poslat teto konkretni zakladne.
+
+        Zamerne zadny fallback na "spolecny vychozi soubor" - kdyz pro peera
+        neni v cre_manifest_map zaznam, vraci se None a volajici nesmi poslat
+        nic (viz DULEZITE u _request_reload): spatny manifest zakladne
+        nenavratne smaze jeji vlastni pravidla. run.sh sestavuje mapu pro
+        VSECHNY zname zakladny vcetne prvni, takze tohle neni jen fallback
+        pro druhou a dalsi - je to jedina cesta.
+        """
+        return self.control_manifest_paths.get(base_key(peer))
+
+    def _peers_for_manifest_path(self, path: Path) -> list[str]:
+        """Kteri znami peeri (zakladny) pouzivaji tenhle konkretni soubor manifestu.
+
+        Porovnava se podle syroveho base_key(peer), stejne jako
+        _manifest_path_for - narozdil od _peer_for_base_key to zamerne NENI
+        zobrazovane jmeno zakladny (to muze byt prepsane volbou base_id),
+        protoze soubory manifestu se jmenuji podle skutecne adresy.
+        """
+        matching_keys = {
+            key for key, value in self.control_manifest_paths.items() if value == path
+        }
+        return [peer for peer in self.base_keys_seen if base_key(peer) in matching_keys]
+
+    def next_event_command(self, peer: str) -> dict[str, Any] | None:
         with self.command_lock:
             try:
                 self._refresh_event_commands()
@@ -2256,17 +2362,24 @@ class Gateway:
                 print(f"Nelze zpracovat control požadavky: {exc}", flush=True)
             # Maintenance requests go first: they are user initiated and the
             # base station only applies one configuration change at a time.
-            queue = self.control_commands or self.pending_commands
-            return dict(queue[0]) if queue else None
+            queue = self.control_commands_by_peer.get(peer, [])
+            if queue:
+                return dict(queue[0])
+            for item in self.pending_commands:
+                if self._matches_peer(item, peer):
+                    return dict(item)
+            return None
 
-    def mark_event_command_sent(self, command_id: str) -> None:
+    def mark_event_command_sent(self, command_id: str, peer: str) -> None:
         with self.command_lock:
             self.pending_commands = [
                 item for item in self.pending_commands if item["id"] != command_id
             ]
-            self.control_commands = [
-                item for item in self.control_commands if item["id"] != command_id
-            ]
+            queue = self.control_commands_by_peer.get(peer)
+            if queue:
+                self.control_commands_by_peer[peer] = [
+                    item for item in queue if item["id"] != command_id
+                ]
             self.sent_command_ids.add(command_id)
             self._save_command_state()
 
@@ -2318,6 +2431,14 @@ class Gateway:
 
         self.remember_base_identity(peer, base_identity_from_action(path, text))
 
+        if self.base_id and peer not in self.base_keys_seen and self.base_keys_seen:
+            print(
+                f"POZOR: base_id je nastaveno, ale hlásí se víc než jedna základna "
+                f"- pro {peer} se použije adresa místo base_id, aby se dvě fyzické "
+                "základny neslily do jedné entity v Home Assistantu",
+                flush=True,
+            )
+
         # Tlacitka zakladny se vystavi az ve chvili, kdy se nejaka opravdu ozve.
         base = self.base_name(peer)
         self._retire_stale_base_keys(base, peer)
@@ -2359,10 +2480,13 @@ class Gateway:
             "received_at": record["received_at"],
         }
         key = f"{event['device_type']}/{event['device_id']}"
+        device_base_changed = False
         with self.lock:
             if event["payload"] == "deleted":
-                # Odparovany uzel se nesmi po restartu znovu ohlasit.
+                # Odparovany uzel se nesmi po restartu znovu ohlasit, a prikazy pro
+                # nej uz nemaji kam smerovat.
                 self.state.pop(key, None)
+                device_base_changed = self.device_base.pop(key, None) is not None
             else:
                 device = self.state.setdefault(
                     key,
@@ -2372,7 +2496,14 @@ class Gateway:
                     },
                 )
                 device[event["sink"]] = event
+                # Zapamatovat, ktera zakladna od tohohle zarizeni naposledy videla
+                # udalost - pouzije se pri smerovani prikazu (viz _resolve_target_peers).
+                if self.device_base.get(key) != peer:
+                    self.device_base[key] = peer
+                    device_base_changed = True
             atomic_json_write(self.state_path, self.state)
+        if device_base_changed:
+            self._save_command_state()
         self.mqtt.publish_event(event, base)
         # Ohlaseni uzlu (sink/dev) zadny "payload" nema, a prave v nem uzel
         # popisuje sam sebe - bez cele zpravy by to zapadlo.
@@ -2494,7 +2625,7 @@ def handle_connection(
                 response_event: dict[str, Any] | None = None
                 sent_command: dict[str, Any] | None = None
                 while time.monotonic() < deadline:
-                    command = gateway.next_event_command()
+                    command = gateway.next_event_command(peer[0])
                     if command is not None:
                         response_event = cloud_event_for_command(command)
                         sent_command = command
@@ -2516,7 +2647,7 @@ def handle_connection(
                 )
                 tls.sendall(response)
                 if sent_command is not None:
-                    gateway.mark_event_command_sent(sent_command["id"])
+                    gateway.mark_event_command_sent(sent_command["id"], peer[0])
                     print(
                         "EVENT COMMAND "
                         + str(sent_command["id"])
@@ -2537,7 +2668,24 @@ def handle_connection(
                 response_body = b'{"status":"ok"}'
                 content_type = "application/json"
             elif method == "GET" and path == "/api/v1/bs01/configuration":
-                configuration_payload, cre_uid = local_configuration(gateway.config)
+                manifest_path = gateway._manifest_path_for(peer[0])
+                if manifest_path is None:
+                    print(
+                        f"CONFIG {peer[0]} nemá přiřazený CRE manifest - "
+                        f"chybí cre_manifest.{base_key(peer[0])}.json, jinak "
+                        "se bude ptát pořád dokola",
+                        flush=True,
+                    )
+                    response = (
+                        b"HTTP/1.1 404 Not Found\r\n"
+                        b"Content-Length: 0\r\n"
+                        b"Connection: close\r\n\r\n"
+                    )
+                    tls.sendall(response)
+                    return
+                configuration_payload, cre_uid = local_configuration(
+                    gateway.config, manifest_path
+                )
                 cre_manifest = configuration_payload["cre"]
                 response_body = json.dumps(
                     configuration_payload,
@@ -2572,7 +2720,12 @@ def handle_connection(
                     confirmation = json.loads(body.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     confirmation = {}
-                _, expected_uid = local_configuration(gateway.config)
+                manifest_path = gateway._manifest_path_for(peer[0])
+                expected_uid = (
+                    local_configuration(gateway.config, manifest_path)[1]
+                    if manifest_path is not None
+                    else None
+                )
                 feature = confirmation.get("feature")
                 status = confirmation.get("status")
                 confirmed_uid = confirmation.get("cre_uid")
@@ -2773,9 +2926,9 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
                 head, _, rest = request.partition(b"\r\n\r\n")
                 document = _read_upload(conn, head, rest)
                 if parts[1].startswith("/inventory"):
-                    accepted = gateway.store_base_inventory(document)
+                    accepted = gateway.store_base_inventory(document, peer)
                 else:
-                    accepted = gateway.store_base_manifest(document)
+                    accepted = gateway.store_base_manifest(document, peer)
                 body = b""
                 status = b"200 OK" if accepted else b"400 Bad Request"
         elif len(parts) < 2 or parts[0] != "GET":
@@ -2790,7 +2943,7 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
             _, _, query = parts[1].partition("?")
             if query.startswith("s="):
                 print(f"CONTROL STAV {peer} {query[2:]}", flush=True)
-            body = gateway.take_control_poll_lines().encode("ascii", "replace")
+            body = gateway.take_control_poll_lines(peer).encode("ascii", "replace")
             status = b"200 OK"
             gateway.note_control_poll(peer)
         conn.sendall(

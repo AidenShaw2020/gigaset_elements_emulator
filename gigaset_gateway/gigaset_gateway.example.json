@@ -24,8 +24,11 @@
   "raw_dns": { "enabled": false },
 
   "base_configuration_file": "base_configuration.json",
-  "cre_manifest_file": "cre_manifest.json",
+  "cre_manifest_map": {
+    "192_0_2_50": "cre_manifest.192_0_2_50.json"
+  },
   "base_manifest_file": "cre_manifest_from_base.json",
+  "base_manifest_map": {},
   "cre_source_dirs": [
     "cre_custom",
     "cre_firmware"

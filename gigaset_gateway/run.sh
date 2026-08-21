@@ -7,7 +7,6 @@ SHARE=/share/gigaset
 CONFIG="${DATA}/gigaset_gateway.json"
 CERTIFICATE="${DATA}/lab.cert.pem"
 PRIVATE_KEY="${DATA}/lab.key.pem"
-MANIFEST="${DATA}/cre_manifest.json"
 GENERATED_CRE="${DATA}/cre"
 BASE_CONFIGURATION="${DATA}/base_configuration.json"
 CONTROL_REQUESTS="${SHARE}/control.json"
@@ -79,22 +78,20 @@ fi
 # --- soubory, ktere si brana za behu prepisuje ------------------------------
 # Manifest rika zakladne, ktere Lua ma nacist, a jmenuje presne ty verze, ktere
 # ji kdysi nadelil originalni cloud - vcetne pravidel zalozenych uzivatelem.
-# Kazda zakladna ma proto svuj vlastni; ten zabudovany pochazi z vyvojove a na
-# cizi zakladne by jmenoval soubory, ktere nikdy nemela.
-SOURCE_MANIFEST=/opt/gigaset/cre_manifest.json
-MANIFEST_FROM_BASE=false
-if [ -f "${SHARE}/cre_manifest.json" ]; then
-    SOURCE_MANIFEST="${SHARE}/cre_manifest.json"
-    MANIFEST_FROM_BASE=true
-    bashio::log.info "Manifest CRE z '${SOURCE_MANIFEST}'."
-else
-    bashio::log.warning \
-        "Používá se zabudovaný manifest CRE. Pokud vaše základna hlásí chybějící
-         soubory, zkopírujte z ní '/cfg/cre' do '${SHARE}/cre_manifest.json'."
-fi
-
-# Vlastni knihovny doplnku se do manifestu doplni vzdy, at uz pochazi odkudkoliv.
-# Nazev souboru je <klic>-<verze>.lua, takze klic staci uriznout.
+# Kazda FYZICKA zakladna ma svuj vlastni soubor
+# "${SHARE}/cre_manifest.<base_key>.json", kde base_key je jeji IP adresa s
+# teckami/dvojtecky nahrazenymi podtrzitky - presne to, jak se brana zakladne
+# venuje i jinde (viz base_key() v gigaset_gateway.py), napr. adresa
+# 192.0.2.50 -> "cre_manifest.192_0_2_50.json".  Poslat zakladne manifest jine
+# zakladny (nebo slouceny) by ji nenavratne smazal vlastni pravidla, proto se
+# manifesty drzi uplne oddelene a zadny "spolecny vychozi soubor" pro
+# neznamou zakladnu neexistuje - kdo upgraduje z verze pro jedinou zakladnu,
+# stary holy "${SHARE}/cre_manifest.json" jednou rucne prejmenuje (navod v
+# DOCS.md).
+#
+# Vlastni knihovny doplnku se do kazdeho manifestu doplni vzdy, at uz jinak
+# pochazi odkudkoliv.  Nazev souboru je <klic>-<verze>.lua, takze klic staci
+# uriznout.
 OWN_LIBRARIES=$(
     for path in /opt/gigaset/cre/*.lua; do
         [ -e "${path}" ] || continue
@@ -106,44 +103,55 @@ OWN_LIBRARIES=$(
 ) || OWN_LIBRARIES=""
 [ -n "${OWN_LIBRARIES}" ] || OWN_LIBRARIES="{}"
 
-# Serie gwctl musi prezit restart, jinak by zakladna delala zbytecny reload CRE.
-[ -f "${MANIFEST}" ] || echo '{}' > "${MANIFEST}"
-if jq -s --argjson own "${OWN_LIBRARIES}" '
-    .[0] as $source
-  | .[1] as $current
-  | $source
-  | .endnode_libraries = ((.endnode_libraries // {}) + $own)
-  | if ($current.endnode_libraries.gwctl // "") == "" then .
-    else .endnode_libraries.gwctl = $current.endnode_libraries.gwctl end
-' "${SOURCE_MANIFEST}" "${MANIFEST}" > "${MANIFEST}.new"; then
-    mv "${MANIFEST}.new" "${MANIFEST}"
-else
-    rm -f "${MANIFEST}.new"
-    bashio::log.warning "Manifest CRE nelze sloučit, používá se ten v /data."
-fi
-if [ ! -f "${CONTROL_REQUESTS}" ]; then
-    echo '{ "requests": [] }' > "${CONTROL_REQUESTS}"
-fi
+MANIFEST_FOUND=false
+CRE_MANIFEST_MAP="{}"
+BASE_MANIFEST_MAP="{}"
+for src in "${SHARE}"/cre_manifest.*.json; do
+    [ -e "${src}" ] || continue
+    key=$(basename "${src}" .json)
+    key=${key#cre_manifest.}
+    MANIFEST_FOUND=true
+    # Serie gwctl musi prezit restart, jinak by zakladna delala zbytecny reload
+    # CRE - proto se sluceny vysledek drzi v /data a meni se jen kdyz je treba.
+    dst="${DATA}/cre_manifest.${key}.json"
+    [ -f "${dst}" ] || echo '{}' > "${dst}"
+    if jq -s --argjson own "${OWN_LIBRARIES}" '
+        .[0] as $source
+      | .[1] as $current
+      | $source
+      | .endnode_libraries = ((.endnode_libraries // {}) + $own)
+      | if ($current.endnode_libraries.gwctl // "") == "" then .
+        else .endnode_libraries.gwctl = $current.endnode_libraries.gwctl end
+    ' "${src}" "${dst}" > "${dst}.new"; then
+        mv "${dst}.new" "${dst}"
+    else
+        rm -f "${dst}.new"
+        bashio::log.warning "Manifest CRE pro '${key}' nelze sloučit, používá se ten v /data."
+    fi
+    CRE_MANIFEST_MAP=$(echo "${CRE_MANIFEST_MAP}" | jq --arg k "${key}" --arg v "${dst}" '. + {($k): $v}')
+    BASE_MANIFEST_MAP=$(echo "${BASE_MANIFEST_MAP}" | jq --arg k "${key}" --arg v "${src}" '. + {($k): $v}')
+    bashio::log.info "Manifest CRE pro základnu '${key}' z '${src}'."
+done
 
 # Zakladna soubory, ktere v manifestu nejsou, ze sveho disku SMAZE (overeno
 # 2026-08-14).  Poslat ji necely manifest proto znamena nenavratne prijit o
 # pravidla, ktera uz z vypnuteho cloudu nikdo neziská - nikdy to nedelat
-# automaticky.  Kdyz jeji manifest nezname, je jedina bezpecna cesta nechat si
-# ho dodat od uzivatele.
-BOOTSTRAP=false
-
-# Manifest povazujeme za vlastni teto zakladne, kdyz ho dodal uzivatel, nebo
-# kdyz mame jeji Lua z firmwaru.  Bez nej se doplnek nespousti: zakladna maze
-# soubory, ktere v prijatem manifestu nejsou, a cizi manifest by ji tak pripravil
-# o pravidla, ktera uz z vypnuteho cloudu nikdo neziská.
-OWN_MANIFEST=true
-if [ ! -f "${SHARE}/cre_manifest.json" ] \
-    && [ -z "$(ls -A "${FIRMWARE_CRE}" 2>/dev/null)" ]; then
+# automaticky, a bez manifestu se doplnek radeji vubec nespusti.
+if [ "${MANIFEST_FOUND}" != "true" ]; then
     bashio::log.fatal \
-        "Chybí manifest CRE vaší základny. Vytvořte ho podle návodu v dokumentaci
-         doplňku a uložte jako '${SHARE}/cre_manifest.json'. Bez něj by základna
-         přišla o pravidla, která už není odkud stáhnout."
+        "Chybí manifest CRE vaší základny. Vytvořte ho podle návodu v
+         dokumentaci doplňku a uložte jako
+         '${SHARE}/cre_manifest.<klíč_základny>.json' (klíč je IP adresa
+         základny s tečkami nahrazenými podtržítky, např. 192.0.2.50 ->
+         cre_manifest.192_0_2_50.json). Pokud přecházíte z verze pro jedinou
+         základnu, stačí přejmenovat starý '${SHARE}/cre_manifest.json'. Bez
+         manifestu by základna přišla o pravidla, která už není odkud
+         stáhnout."
     bashio::exit.nok
+fi
+
+if [ ! -f "${CONTROL_REQUESTS}" ]; then
+    echo '{ "requests": [] }' > "${CONTROL_REQUESTS}"
 fi
 
 jq -n \
@@ -158,14 +166,11 @@ jq -n \
     --arg gateway "${GATEWAY_ADDRESS}" \
     --arg certificate "${CERTIFICATE}" \
     --arg private_key "${PRIVATE_KEY}" \
-    --arg manifest "${MANIFEST}" \
+    --argjson cre_manifest_map "${CRE_MANIFEST_MAP}" \
+    --argjson base_manifest_map "${BASE_MANIFEST_MAP}" \
     --arg generated_cre "${GENERATED_CRE}" \
     --arg firmware_cre "${FIRMWARE_CRE}" \
     --arg base_configuration "${BASE_CONFIGURATION}" \
-    --arg base_manifest "${SHARE}/cre_manifest.json" \
-    --arg bootstrap "${BOOTSTRAP}" \
-    --arg own_manifest "${OWN_MANIFEST}" \
-    --arg manifest_from_base "${MANIFEST_FROM_BASE}" \
     --arg control_requests "${CONTROL_REQUESTS}" \
     --arg mqtt_host "${MQTT_HOST}" \
     --arg mqtt_port "${MQTT_PORT}" \
@@ -193,11 +198,8 @@ jq -n \
         event_commands: [],
         raw_dns: { enabled: false },
         base_configuration_file: $base_configuration,
-        cre_manifest_file: $manifest,
-        base_manifest_file: $base_manifest,
-        bootstrap_manifest: ($bootstrap == "true"),
-        manifest_is_own: ($own_manifest == "true"),
-        manifest_from_base: ($manifest_from_base == "true"),
+        cre_manifest_map: $cre_manifest_map,
+        base_manifest_map: $base_manifest_map,
         cre_source_dirs: [ $generated_cre, "/opt/gigaset/cre", $firmware_cre ],
         control: {
             enabled: true,
