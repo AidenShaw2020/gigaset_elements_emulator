@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.48
+
+- Relax the server's cipher policy (`context.set_ciphers("ALL:@SECLEVEL=0")`)
+  alongside the 1.0.47 TLS 1.2 cap. Needed together with a re-issued client
+  certificate (see 1.0.47 and [RECOVERY.md](../../RECOVERY.md)) to get the
+  unit described below connecting at all; on its own, capping the TLS
+  version was not enough for that unit either.
+
 ## 1.0.47
 
 - Cap the TLS server at TLS 1.2 (`maximum_version`, alongside the existing
@@ -13,8 +21,28 @@
   path validates more strictly than its TLS 1.2 path, which is the one the
   add-on has always been verified against (hence the pre-existing
   `minimum_version`). Capping the maximum keeps every base on the
-  known-working 1.2 path. **Not yet confirmed against real hardware** -
-  please report back whether this actually fixes the second base station.
+  known-working 1.2 path.
+- The TLS version cap alone did not fix that unit - the rejection was
+  byte-for-byte identical before and after, repeated identically across
+  many reconnect attempts on the real network. Three other base stations
+  added to the same property since (without a flash dump) accepted the
+  add-on's self-signed certificate without needing any of this, including
+  one confirmed to have previously been paired with the real Gigaset
+  cloud, so this was never a general problem with every base.
+- **Root cause found via a full UART flash dump of the failing unit**: its
+  own stored client identity was broken. One JFFS2 bank held a client
+  certificate that had been expired since 2018; the other, active bank had
+  a newer private key and CSR but **no certificate at all**. A base with
+  nothing valid to present as its own side of the handshake never
+  completes a TLS 1.3 connection to this add-on the same way it does on
+  TLS 1.2, which is the path this add-on had actually been verified
+  against up to this point. Re-issuing a certificate for that unit's own
+  CSR and writing it back into flash, together with the TLS 1.2 cap and
+  the 1.0.48 cipher relaxation, fixed this specific unit. See
+  [RECOVERY.md](../../RECOVERY.md) for the full UART-level procedure. Since
+  this only reproduced on the one unit with a broken on-flash identity, a
+  base that already has a valid certificate should not be affected either
+  way by the TLS cap or the cipher relaxation.
 
 ## 1.0.46
 
