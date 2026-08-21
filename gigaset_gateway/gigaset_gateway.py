@@ -2460,11 +2460,19 @@ class Gateway:
         if base not in self.announced_bases:
             self.announced_bases.add(base)
             with self.lock:
+                # Jen zarizeni, ktera prokazatelne patri prave teto zakladne -
+                # jinak by prvni restart po pridani dalsi zakladny znovu
+                # ohlasil UPLNE VSECHNA zarizeni ze sdileneho self.state (i ta
+                # jiných základen) pod tou zakladnou, ktera se ozvala jako
+                # prvni, a discovery() je kvuli deduplikaci podle tematu uz
+                # nikdy neprepublikuje pod tou spravnou.
                 known = [
                     item
-                    for device in self.state.values()
+                    for key, device in self.state.items()
                     for item in device.values()
-                    if isinstance(item, dict) and "sink" in item
+                    if isinstance(item, dict)
+                    and "sink" in item
+                    and self.device_base.get(key) == peer
                 ]
             self.mqtt.announce_known(known, base)
 
@@ -2945,7 +2953,15 @@ def control_poll_handler(conn: socket.socket, peer: str, gateway: "Gateway") -> 
             # Dotazy na prikazy chodi kazdych par sekund, ostatni jsou vzacne a
             # stoji za zaznam - jinak nejde poznat, jestli vubec dorazily.
             print(f"CONTROL POŽADAVEK {peer} {line[:120]}", flush=True)
-        known = gateway.base_ids and peer not in gateway.base_ids
+        # Odmitnuti cizich peeru na /gwctl. Puvodne to overovalo clenstvi v
+        # base_ids, ale ten se plni jen prilezitostne (z certifikatu nebo z
+        # hlaseni pravidla) - u vic zakladen se tak libovolna z nich mohla
+        # jevit jako "cizi" jen proto, ze tam jeste nic takoveho neprislo, a
+        # jeji /gwctl byl trvale odmitany. Manifest ma naproti tomu kazda
+        # nakonfigurovana zakladna hned od startu (jinak by se brana vubec
+        # nespustila), takze je to spolehlivy test "je tohle vubec nekym, s
+        # kym pocitame".
+        known = gateway._manifest_path_for(peer) is None
         upload = (
             len(parts) >= 2
             and parts[0] == "POST"
