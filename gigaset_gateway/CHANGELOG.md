@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.46
+
+- Fix a false-alarm warning introduced in 1.0.45: on every start, the log
+  showed a scary `POZOR: chybí soubory z firmwaru ...` line naming every
+  stock Lua file (rules, internal libraries) the add-on itself does not
+  serve, as if the base station were stuck redownloading its configuration
+  in a loop. It was not - the 1.0.45 rewrite of this check accidentally
+  dropped the `manifest_from_base` condition that used to pick a milder,
+  correct message for this case (`Základna je má na sobě, potřeba budou až
+  po továrním resetu.`). The base already has these files from when the
+  original cloud provisioned it and only re-downloads a manifest entry
+  whose *file name changed* - since every manifest is now always the base's
+  own (there is no more built-in fallback manifest to distinguish it from),
+  this milder message is now used unconditionally.
+
 ## 1.0.45
 
 - Support more than one base station at once. Previously the add-on assumed

@@ -1936,11 +1936,16 @@ class Gateway:
         return True
 
     def _check_cre_sources(self) -> None:
-        """Ohlasit polozky manifestu kazde zname zakladny, ktere brana neumi obslouzit.
+        """Zapsat do logu, ktere polozky manifestu kazde zname zakladny brana sama neposkytuje.
 
-        Na chybejici soubor zakladna reaguje tim, ze si konfiguraci stahuje
-        porad dokola a nikdy ji nepotvrdi - bez tohoto varovani to vypada, ze se
-        nedeje nic.
+        Zakladna si stahuje jen ty polozky manifestu, kterym se zmenil nazev
+        souboru - puvodni knihovny uz ma z doby, kdy ji provisionoval
+        originalni cloud, a tenhle seznam u nich nic nemeni. Manifest je vzdy
+        zakladny/uzivatele vlastni (viz cre_manifest_map - brana uz zadny
+        vestaveny nahradni manifest nema), takze chybejici stare nazvy jsou
+        ocekavane a neskodne - budou potreba az po tovarnim resetu (viz
+        firmware_cre_dir v DOCS.md). Zprava je proto jen informativni, ne
+        varovani.
         """
         for path in set(self.control_manifest_paths.values()):
             try:
@@ -1961,8 +1966,8 @@ class Gateway:
             if not missing:
                 continue
             print(
-                f"POZOR ({path}): chybí soubory z firmwaru " + ", ".join(missing) + " - "
-                "základna si bude konfiguraci stahovat pořád dokola",
+                f"Z firmwaru ({path}) chybí {len(missing)} souborů. Základna je "
+                "má na sobě, potřeba budou až po továrním resetu.",
                 flush=True,
             )
 
