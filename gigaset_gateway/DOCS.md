@@ -197,6 +197,14 @@ semicolon-separated list of device ids, e.g.
 There is no button for it because the target list is different every time
 it is needed; see [RECOVERY.md](../../docs/RECOVERY.md) for when this comes up.
 
+`deleteall` wipes a base's entire DECT device table in one request -
+`{ "id": "wipe-01", "action": "deleteall", "base": "192_0_2_50" }`. Unlike
+`endnodes_cleanup`, this also removes real, currently-paired sensors, which
+then need to be paired again afterwards; it reaches devices
+`endnodes_cleanup` cannot, because it acts on the live join table rather
+than a bookkeeping file. No button on purpose, for the same reason - this
+one is destructive enough that it should not be a single accidental click.
+
 Requests aimed at a specific sensor (anything with `device_type`/`device_id`)
 are routed automatically to whichever base station last reported an event
 from that sensor - no `"base"` needed. Requests aimed at a base station

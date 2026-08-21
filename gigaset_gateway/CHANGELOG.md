@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.57
+
+- Add `deleteall`, a `control.json`-only action that wipes a base's entire
+  DECT device table in one go - the same low-level table `delete` (Unpair)
+  already uses for one device at a time, and the one `endnodes_cleanup`
+  (1.0.54) cannot reach, since that edits a bookkeeping file the join table
+  does not read from. Where a base carries stale phantom pairings left over
+  by the UART recovery in `docs/RECOVERY.md` mixed in with real ones,
+  `deleteall` clears both - the real sensors then need to be paired again
+  afterwards. No Home Assistant button on purpose, same reasoning as
+  `endnodes_cleanup`: this is destructive enough that it should not be one
+  accidental click away.
+
 ## 1.0.56
 
 - Fix `endnodes_dump` (1.0.55) always failing with `400 Bad Request`. It

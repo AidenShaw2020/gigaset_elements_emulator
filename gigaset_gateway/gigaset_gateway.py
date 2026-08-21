@@ -243,6 +243,12 @@ CONTROL_ACTIONS = {
     "pair_stop": ("ule", lambda _device_id: "regoff"),
     "reglist": ("ule", lambda _device_id: "reglist"),
     "unpair": ("ule", lambda _device_id: "delete"),
+    # Smaze VSECHNA parovani teto zakladny z jejiho vlastniho DECT zarizeni
+    # tabulky najednou - stejna nizkoruvnova tabulka, kterou "delete" pouziva
+    # pro jedno zarizeni, viz RECOVERY.md ("Known side effect"). Zamerne bez
+    # tlacitka v HA: smaze i realna parovani, ne jen fantomova, takze nasleduje
+    # rucni znovu-sparovani.
+    "deleteall": ("ule", lambda _device_id: "deleteall"),
     # Kalibrace okennich/dvernich senzoru.  Tohle jsou prikazy pro KONCOVY UZEL,
     # ne pro UleApp, takze musi jit pres CRE volani ule_command_send.  Zapis na
     # JBus tema ulecontrol nefunguje: UleApp porovnava nazev proti sve tabulce a
