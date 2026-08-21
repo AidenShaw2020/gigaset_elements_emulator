@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.53
+
+- Fix discovery not coming back for some devices after the (pre-existing)
+  stale-base-key cleanup runs. `_retire_base_key()` - which removes a
+  duplicate base entity left over from an older, certificate-ID-keyed
+  version of the add-on - clears the whole MQTT "already announced" cache
+  so every device's `via_device` gets republished with the current key.
+  It never triggered the 1.0.51 bulk replay that repopulates that cache,
+  so only devices that happened to send a fresh event afterwards actually
+  got their discovery back; anything orphaned or slow to report stayed
+  invisible until it did.
+
 ## 1.0.52
 
 - Log which base station every `CRE`/`CONTROL MQTT` line actually concerns.

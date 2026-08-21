@@ -2289,6 +2289,13 @@ class Gateway:
         self.mqtt.remove_base(key)
         # Uzly nesou via_device se starym klicem, takze se musi ohlasit znovu.
         self.mqtt.announced.clear()
+        # ...ale samo se to stane jen zarizenim, ktera zrovna posle novou
+        # udalost - "known" replay (viz _replay_all_known_devices) o tomhle
+        # vycisteni nevi a bez tohoto volani by pro zbytek behu myslel, ze uz
+        # ma hotovo (self.announced_bases zustava beze zmeny). Osirele nebo
+        # zridka hlasici zarizeni by tak zustala v HA bez discovery, dokud by
+        # samy neposlaly dalsi udalost.
+        self._replay_all_known_devices()
 
     def _refresh_control_requests(self) -> None:
         """Zaradit nove pozadavky do fronty, kterou si gwctl sam vyzvedne."""
