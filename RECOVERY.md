@@ -182,6 +182,24 @@ broken to ever reach that endpoint on its own.
    prints the resulting MAC/`ethaddr` so you can confirm they match the
    physical unit you are about to flash.
 
+## Known side effect: the donor's own paired-device bookkeeping comes along
+
+The rebuilt filesystem tree is the donor's, so anything under `db/`/`cfg/`
+that is not explicitly overlaid with the target's own files comes from the
+donor too - including `db/endnodes`, the donor's own record of which
+sensors it has paired. The recovered unit's real DECT join table (governed
+by its own NVS, which *is* correctly preserved) has no idea about the
+donor's sensors, but this file can still list them, and any rule that reads
+it (for example a base's own "turn off every known siren" logic on an
+alarm mode change) will try to command devices that were never really
+paired to this physical unit and get rejected.
+
+`delete`/`deleteall` will not clean this up - both act on the live DECT
+join table, which correctly never had these devices, not on this file. Use
+the `endnodes_cleanup` control action instead (see the add-on's
+`DOCS.md`/`CHANGELOG.md`) to remove the specific stale entries directly, no
+further UART step needed.
+
 ## Writing it back
 
 Physically switch the target into the ROM UART bootloader the same way as

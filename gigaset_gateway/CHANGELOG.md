@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.54
+
+- Add `endnodes_cleanup`, a `control.json`-only action that removes specific
+  entries from a base's own `/mnt/data/db/endnodes` directly on the base,
+  no UART or reflash needed. Give it a semicolon-separated `command` list
+  of device ids and a `"base"`. This exists for a case the UART recovery in
+  RECOVERY.md can leave behind: the hybrid image copies a donor base's
+  entire filesystem tree, including `db/endnodes`, so the recovered unit's
+  bookkeeping can list devices that were only ever really paired to the
+  donor - `delete`/`deleteall` won't clear these, since both work against
+  the live DECT join table, which correctly never had them. There is no
+  Home Assistant button for this on purpose: the target list is different
+  every time it's needed. The edit happens through `gwctl`'s own
+  `os.execute`/`io.open` access (already used for its shell and JBus
+  calls) and writes via a temp file + rename, so a failure partway through
+  leaves the original file untouched.
+
 ## 1.0.53
 
 - Fix discovery not coming back for some devices after the (pre-existing)

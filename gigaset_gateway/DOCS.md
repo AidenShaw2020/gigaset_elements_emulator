@@ -190,6 +190,13 @@ Each request runs once; the id is remembered. `endnode_command` sends whatever
 is in `command` straight to the node, which is useful for trying out commands
 that have no button.
 
+`endnodes_cleanup` removes specific entries from a base's own
+`/mnt/data/db/endnodes` directly on the base - `command` is a
+semicolon-separated list of device ids, e.g.
+`{ "id": "cleanup-01", "action": "endnodes_cleanup", "base": "192_0_2_50", "command": "027c3e0674;031c01eb41" }`.
+There is no button for it because the target list is different every time
+it is needed; see [RECOVERY.md](../../RECOVERY.md) for when this comes up.
+
 Requests aimed at a specific sensor (anything with `device_type`/`device_id`)
 are routed automatically to whichever base station last reported an event
 from that sensor - no `"base"` needed. Requests aimed at a base station
