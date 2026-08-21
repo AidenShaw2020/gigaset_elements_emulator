@@ -1,4 +1,4 @@
-# Local gateway for Gigaset elements
+![Local gateway for Gigaset elements](gigaset_gateway/logo.png)
 
 A self-hosted replacement for the Gigaset elements cloud. The base station keeps
 its original firmware and simply talks to this gateway instead of
@@ -74,16 +74,23 @@ Once the control library is running it sends `/mnt/data/cfg/cre` over by itself,
 so this is a one-time exercise per base station. To get there the first time
 you need to read that base's flash:
 
-1. Disconnect power, bridge GND and UTX on the 3-pin header, connect power,
+1. Build the loader once: `./tools/build_uart_loader.sh` (needs `git`, `docker`
+   and `patch`). It produces `452dump.bin` in the current directory - see
+   [Ownership of the UART loader](#ownership-of-the-uart-loader-452dumpbin)
+   for what it is and where it comes from.
+2. Disconnect power, bridge GND and UTX on the 3-pin header, connect power,
    remove the bridge, then attach a 3.3 V UART adapter. All LEDs stay dark and
    the mask ROM starts emitting `STX` at 9600 baud. The header is, component
    side with the ethernet jack down, left to right: **URX / GND / UTX**.
-2. `python tools/gigaset_uart_dump.py --port COM3 --output flash.bin`
-   The dump is read-only - the tool never sends an erase or program command.
-   Eight megabytes take about thirteen minutes.
-3. `python -m pip install jefferson`
-4. `python tools/extract_base_manifest.py flash.bin -o cre_manifest.json`
-5. Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` (add-on) or
+<img width="600" height="320" alt="image" src="https://github.com/user-attachments/assets/6bfc5fba-f236-435c-818c-1024b7ca2d39" />
+
+3. `python tools/gigaset_uart_dump.py --port COM3 --loader 452dump.bin --output flash.bin`
+   This host only uploads the RAM-resident loader built in step 1 and
+   receives bytes back - it never sends an erase or program command. Eight
+   megabytes take about thirteen minutes.
+4. `python -m pip install jefferson`
+5. `python tools/extract_base_manifest.py flash.bin -o cre_manifest.json`
+6. Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` (add-on) or
    point `cre_manifest_file` at it (script) - `<base_key>` is that base's own
    LAN IP address with dots replaced by underscores (`192.0.2.50` becomes
    `cre_manifest.192_0_2_50.json`), matching how the add-on identifies each base
@@ -93,6 +100,28 @@ you need to read that base's flash:
 
 Keep the dump. It is the only backup of the rules on that base, and the Lua
 files in it are what you would need after a factory reset.
+
+### Ownership of the UART loader (452dump.bin)
+
+`build_uart_loader.sh` fetches the loader's source from Gigaset's own SC14452
+"opensource" release, mirrored by the Osmocom DECT project at
+[gitea.osmocom.org/dect/gigaset_elements_bl26_opensource](https://gitea.osmocom.org/dect/gigaset_elements_bl26_opensource),
+and cross-compiles it. That package - including `flprogr.c`, the stock flash
+programmer the loader is built from, and the cr16 cross-compiler used to
+build it - belongs to Gigaset Communications GmbH / Dialog Semiconductor, not
+to this project, and its licensing terms are its own (the package mixes GPL
+components with proprietary ones - see its `README_LEGAL.txt`). It is **not**
+covered by this repository's `LICENSE`, and none of it is stored here: the
+script only fetches it into a temporary directory at build time and discards
+the checkout afterwards, the same way the CRE Lua libraries above are never
+stored in this repository either.
+
+The only thing this project adds is
+[`tools/patches/452dump-flash-read-only.patch`](tools/patches/452dump-flash-read-only.patch),
+which the script applies to that checkout before building. It turns the
+stock programmer into a read-only dump mode (behind a new `FLASH_DUMP` build
+flag, so the stock programmer paths are untouched) and is original code
+written for this project - see the patch file for details.
 
 Shipped here are only the four libraries written for this project:
 
@@ -418,10 +447,15 @@ uploads, and analysis of firmware and of the vendor's Android application,
 both obtained through legitimate channels. Only what was needed to keep the
 hardware working without the cloud was reproduced.
 
-No vendor source code is contained in this repository, and none is needed to
-run the gateway.
+No vendor source code is contained in this repository (beyond the few
+unchanged context lines any patch file needs around its changes), and none is
+needed to run the gateway. Recovering a base's CRE manifest over UART is the
+one exception: it needs the loader built by `tools/build_uart_loader.sh`, which
+fetches Gigaset's own published opensource package at build time and stores
+nothing from it here - see [Ownership of the UART loader](#ownership-of-the-uart-loader-452dumpbin).
 
 ## License
 
-See `LICENSE`. The Lua files extracted from a base station are Gigaset firmware
-and are not covered by it.
+See `LICENSE`. The Lua files extracted from a base station and the SC14452
+UART loader built by `tools/build_uart_loader.sh` are Gigaset/Dialog Semiconductor
+code and are not covered by it.
