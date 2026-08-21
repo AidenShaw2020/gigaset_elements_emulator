@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.56
+
+- Fix `endnodes_dump` (1.0.55) always failing with `400 Bad Request`. It
+  was wired into `record()`, the handler for the HTTPS cloud API (port
+  8443) - but `gwctl`'s own `post()` helper, which every upload including
+  this one goes through, always sends to the plain-HTTP control channel
+  (port 8080/`/gwctl`), the same one `/manifest` and `/inventory` uploads
+  use. `record()` never saw the request at all. Moved the handling into
+  `control_poll_handler()`, next to the existing upload handling it was
+  supposed to sit alongside from the start.
+
 ## 1.0.55
 
 - Add `endnodes_dump`, a `control.json` action that prints a base's current
