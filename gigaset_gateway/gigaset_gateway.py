@@ -301,6 +301,10 @@ CONTROL_ACTIONS = {
     # "command" v control.json - zamerne neni tlacitko v HA, protoze cil
     # se pokazde lisi.
     "endnodes_cleanup": ("cleanup", lambda _device_id: ""),
+    # Vypise aktualni obsah /mnt/data/db/endnodes do logu gateway (DEBUG
+    # UPLOAD), beze zmeny na zakladne - cistě diagnostika pred/po
+    # endnodes_cleanup.
+    "endnodes_dump": ("dump", lambda _device_id: ""),
     # Prepnuti rezimu alarmu.  Kazdy rezim ma vlastni akci, takze se nemusi
     # validovat volny text - mnozina povolenych hodnot je dana uz tim, ktere
     # akce vubec existuji.
@@ -584,6 +588,16 @@ local function cleanup(label, argument, dev, devtype)
     end
 end
 
+-- Posle aktualni obsah souboru zpet brane, at je videt bez UART.
+local function dump_file(label, path)
+    log("gwctl {} posilam {}", label, path)
+    post("/api/v1/debug/upload", path)
+end
+
+local function dump(label, argument, dev, devtype)
+    dump_file(label, "/mnt/data/db/endnodes")
+end
+
 local HANDLERS = {
     ule = ule,
     pairon = pairon,
@@ -591,6 +605,7 @@ local HANDLERS = {
     alarmmode = alarmmode,
     localevent = localevent,
     cleanup = cleanup,
+    dump = dump,
 }
 
 local function split(line)
@@ -2601,6 +2616,10 @@ class Gateway:
         if path.startswith("/api/v1/bs/sink/unknown"):
             # Sem zakladna hlasi prikaz, kteremu uzel nerozumel (ule/error.c).
             print(f"UZEL ODMÍTL {peer} {text.strip()}", flush=True)
+        if path.startswith("/api/v1/debug/upload"):
+            # Cisty diagnosticky kanal pro gwctl "dump" - viz endnodes_dump.
+            # Jen vypise obsah do logu, nikam se neuklada.
+            print(f"DEBUG UPLOAD {peer}:\n{text}", flush=True)
 
         self.remember_base_identity(peer, base_identity_from_action(path, text))
 
