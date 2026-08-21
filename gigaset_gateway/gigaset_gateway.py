@@ -2785,12 +2785,40 @@ def handle_connection(
 
 
 def raw_dns_loop(interface: str, base_mac: str, target_ip: str) -> None:
+    """Odpovi na kazdy A-dotaz teto zakladny nasi adresou.
+
+    Na izolovanem laboratornim segmentu (bez pripojeni k realnemu internetu)
+    si zakladna nejdriv potrebuje prelozit jmena NTP serveru
+    (europe.pool.ntp.org, ntp.gigaset-elements.com, ...), ne jen cloudovy
+    hostname - bez odpovedi na tyhle dotazy se nikdy nedostane ani k pokusu
+    o NTP, natoz o cloud (overeno 2026-08-21 na druhe zakladne: desitky
+    nezodpovezenych dotazu na NTP jmena, zadny na cloud). Produkcni nasazeni
+    tohle nepotrebuje - tam NTP resi presmerovani portu na routeru, ne DNS.
+    """
     try:
         from scapy.all import DNS, DNSRR, Ether, IP, UDP, conf, sendp, sniff
     except ImportError as exc:
         raise RuntimeError("Raw DNS vyžaduje balíček scapy a Npcap.") from exc
+    import zlib
 
     iface = conf.ifaces.dev_from_name(interface)
+    prefix = target_ip.rsplit(".", 1)[0]
+    resolved: dict[str, str] = {}
+
+    def resolve(name: str) -> str:
+        # Cloudovy hostname MUSI mirit presne na target_ip - tam posloucha
+        # nas HTTPS server. Vsechno ostatni (hlavne jmena NTP serveru) dostane
+        # kazde jinou IP v ramci stejne site: realny pool.ntp.org rotuje mezi
+        # ruznymi servery, a kdyz vsechna jmena vraceji stejnou adresu, uzel
+        # to muze brat jako podezrele a NTP dotaz uz neposlat (overeno
+        # 2026-08-21). Cislo se odvozuje z hashe jmena, aby bylo
+        # stabilni napric opakovanymi dotazy stejneho jmena.
+        if name == "api-bs.gigaset-elements.de" or name.endswith(".gigaset-elements.de"):
+            return target_ip
+        if name not in resolved:
+            offset = (zlib.crc32(name.encode()) % 200) + 10
+            resolved[name] = f"{prefix}.{offset}"
+        return resolved[name]
 
     def answer(packet: Any) -> None:
         if (
@@ -2805,8 +2833,9 @@ def raw_dns_loop(interface: str, base_mac: str, target_ip: str) -> None:
             return
         query = packet[DNS]
         name = bytes(query.qd.qname).decode("ascii", errors="replace").rstrip(".")
-        if int(query.qd.qtype) != 1 or name != "api-bs.gigaset-elements.de":
+        if int(query.qd.qtype) != 1:
             return
+        answer_ip = resolve(name)
         response = (
             Ether(src=iface.mac, dst=packet[Ether].src)
             / IP(src=packet[IP].dst, dst=packet[IP].src)
@@ -2819,11 +2848,11 @@ def raw_dns_loop(interface: str, base_mac: str, target_ip: str) -> None:
                 ra=1,
                 qd=query.qd,
                 ancount=1,
-                an=DNSRR(rrname=query.qd.qname, type="A", ttl=10, rdata=target_ip),
+                an=DNSRR(rrname=query.qd.qname, type="A", ttl=10, rdata=answer_ip),
             )
         )
         sendp(response, iface=iface, verbose=False)
-        print(f"DNS {name} -> {target_ip}", flush=True)
+        print(f"DNS {name} -> {answer_ip}", flush=True)
 
     sniff(iface=iface, filter="udp dst port 53", prn=answer, store=False)
 

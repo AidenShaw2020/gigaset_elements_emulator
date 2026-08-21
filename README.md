@@ -395,6 +395,14 @@ delay down to 0 to 3 seconds. `warn` and `error` are left untouched.
   entity disappear from Home Assistant.
 - Test pad 2 on the board carries 6.5 V.
 
+## Recovering a broken base station
+
+If a base lost its own Lua rules to a wrong manifest, or never reaches this
+gateway at all because its own stored TLS identity is missing or expired,
+see [RECOVERY.md](RECOVERY.md) - a UART-level procedure that rebuilds the
+broken unit's flash from a second, known-good base station while preserving
+the broken unit's own MAC, DECT pairing data and cryptographic identity.
+
 ## Roadmap
 
 - Multi-base support

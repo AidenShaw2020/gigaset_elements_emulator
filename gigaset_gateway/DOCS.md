@@ -229,3 +229,10 @@ requests coming from the base station's own address.
 
 **Entities disappear.** Nothing else may publish to `<base_topic>/availability`;
 that topic carries the add-on's last will.
+
+**The base never even attempts a connection, and a factory reset does not
+help.** This can mean the base's own stored TLS client identity (its
+`cert.key`/`cert.csr`/`cert.crt`) is missing or expired on its own flash -
+something a factory reset does not touch. Fixing this needs a UART-level
+recovery using a second, known-good base station as a donor; see
+[RECOVERY.md](../../RECOVERY.md) in the project root.
