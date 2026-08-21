@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.47
+
+- Cap the TLS server at TLS 1.2 (`maximum_version`, alongside the existing
+  `minimum_version`). Previously nothing capped the top end, so a client
+  that offers TLS 1.3 got it. While adding a second base station, that
+  base rejected our self-signed certificate with `unknown_ca` about 20 ms
+  after receiving it - a fast, local, deliberate rejection, not a timeout -
+  while directly inspecting the certificate confirmed it was otherwise
+  completely valid (correct dates, correct SAN, unexpired). The connection
+  negotiated TLS 1.3. Working hypothesis: this unit's TLS 1.3 certificate
+  path validates more strictly than its TLS 1.2 path, which is the one the
+  add-on has always been verified against (hence the pre-existing
+  `minimum_version`). Capping the maximum keeps every base on the
+  known-working 1.2 path. **Not yet confirmed against real hardware** -
+  please report back whether this actually fixes the second base station.
+
 ## 1.0.46
 
 - Fix a false-alarm warning introduced in 1.0.45: on every start, the log

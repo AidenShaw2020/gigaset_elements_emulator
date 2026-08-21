@@ -3044,6 +3044,13 @@ def serve(config: dict[str, Any]) -> None:
     port = int(config.get("port", 443))
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
+    # Zadny strop na verzi tu drive nebyl, takze se s klientem, ktery umi
+    # TLS 1.3, vyjednavalo 1.3. Podezreni (2026-08-21, druha zakladna stejne
+    # znacky/firmwaru): jeji TLS 1.3 cesta certifikat validuje prisneji nez
+    # TLS 1.2 (odmitne self-signed s "unknown_ca" behem ~20 ms po prijeti,
+    # i kdyz je certifikat sam o sobe v poradku - overeno rucne). Zustat na
+    # 1.2 - presne to, na co uz mirilo puvodni minimum_version.
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
     context.set_ciphers("ALL:@SECLEVEL=0")
     context.load_cert_chain(config["certificate"], config["private_key"])
 
