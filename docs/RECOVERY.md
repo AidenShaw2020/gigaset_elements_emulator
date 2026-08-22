@@ -217,6 +217,22 @@ third, so far unidentified store. Until that is found, there is no known
 way to make this specific log line stop; treat it as harmless and ignore
 it, or if you find the real source, please report it.
 
+## A factory reset undoes this recovery - confirmed on real hardware
+
+**Do not factory-reset a unit that went through this procedure, unless you
+are prepared to run the whole thing again.** A factory reset restores the
+writable filesystem content - including the re-issued `cert.crt` and
+whatever else this procedure overlaid onto the donor's tree - to some
+baseline built into the flash, not to the state this procedure produced.
+On the unit this happened to, the base went right back to rejecting the
+gateway's certificate with `unknown_ca`, exactly the original symptom that
+made this recovery necessary in the first place.
+
+The fix is to flash the same recovery image again - there is no need to
+rebuild it from scratch if you still have the one that already worked. Any
+pairing done, or `endnodes_cleanup` run, after that image was flashed is
+lost the same way and needs to be redone afterwards.
+
 ## Writing it back
 
 Physically switch the target into the ROM UART bootloader the same way as
