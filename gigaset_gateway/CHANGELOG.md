@@ -2,10 +2,6 @@
 
 ## 1.0.59
 
-- Let the UART port settle for 500 ms after opening, without toggling DTR/RTS
-  or clearing a possibly already buffered ROM `STX`. Transient ROM upload
-  failures are retried automatically. This fixes loader startup with affected
-  Linux USB-UART adapters and applies equally to dump and flash.
 - Ship the `base_configuration.json` referenced by the standalone example, so
   script installations no longer fail when the base requests its configuration.
   Its relative path is now resolved next to the selected gateway config file.
