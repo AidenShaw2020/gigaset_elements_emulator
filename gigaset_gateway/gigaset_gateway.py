@@ -3372,6 +3372,7 @@ def main() -> None:
         "state_file",
         "command_state_file",
         "command_queue_file",
+        "base_configuration_file",
     ):
         if key in config and not Path(config[key]).is_absolute():
             config[key] = str(config_path.parent / config[key])

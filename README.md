@@ -179,11 +179,17 @@ documentation for the full option list.
 ## Setup as a script
 
 ```sh
+cd gigaset_gateway
 python -m pip install -r requirements.txt
 python generate_certificate.py --dns api-bs.gigaset-elements.de --ip <GATEWAY_IP>
 cp gigaset_gateway.example.json gigaset_gateway.json
 python gigaset_gateway.py --config gigaset_gateway.json
 ```
+
+The repository includes `base_configuration.json`, referenced by the example
+gateway configuration. It defaults to UTC and the `home` alarm mode; change
+its `timezone` and `timezoneName` values if the base should use another time
+zone.
 
 Both certificate options may be repeated. A wildcard is only possible for DNS
 names; X.509 has no wildcard for IP addresses, so list every address the gateway

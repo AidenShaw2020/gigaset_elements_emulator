@@ -47,6 +47,7 @@ PROG_NAK = 0x16
 PROG_COM = 0x17
 
 FLASH_SIZE = 8 * 1024 * 1024
+SERIAL_OPEN_SETTLE_SECONDS = 0.5
 
 
 def read_byte(port: serial.Serial, timeout: float) -> int | None:
@@ -63,57 +64,80 @@ def upload_loader(
     loader: bytes,
     wait_seconds: float,
     rom_timeout: float,
+    rom_attempts: int = 3,
 ) -> None:
-    port.dtr = False
-    port.rts = False
-    port.reset_input_buffer()
+    # Leave modem-control lines alone.  Some USB-UART drivers briefly glitch
+    # DTR/RTS when they are changed immediately after open(), and some Linux
+    # adapters then lose the ROM handshake.  Do not discard input either: the
+    # SC14452 may already have placed the first STX in the receive buffer.
+    time.sleep(SERIAL_OPEN_SETTLE_SECONDS)
 
-    print(f"Waiting for ROM STX (up to {wait_seconds:.0f} s) ...", flush=True)
-    deadline = time.monotonic() + wait_seconds
-    while True:
-        if time.monotonic() >= deadline:
-            raise TimeoutError("ROM never sent STX - is the base in ROM mode?")
-        data = port.read(1)
-        if data and data[0] == ROM_STX:
+    last_error: Exception | None = None
+    for attempt in range(1, rom_attempts + 1):
+        rom_detected = False
+        try:
+            stx_timeout = wait_seconds if attempt == 1 else min(wait_seconds, 15)
+            print(f"Waiting for ROM STX (up to {stx_timeout:.0f} s) ...", flush=True)
+            deadline = time.monotonic() + stx_timeout
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("ROM never sent STX - is the base in ROM mode?")
+                data = port.read(1)
+                if data and data[0] == ROM_STX:
+                    rom_detected = True
+                    break
+
+            print("ROM detected, sending loader header", flush=True)
+            port.write(struct.pack("<BH", ROM_SOH, len(loader)))
+
+            deadline = time.monotonic() + rom_timeout
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("ROM did not acknowledge the header")
+                reply = port.read(1)
+                if not reply or reply[0] == ROM_STX:
+                    continue
+                if reply[0] == ROM_NAK:
+                    raise RuntimeError("ROM rejected the loader length")
+                if reply[0] != ROM_ACK:
+                    raise RuntimeError(f"unexpected ROM reply 0x{reply[0]:02x}")
+                break
+
+            print("Sending loader body", flush=True)
+            port.write(loader)
+            # Do not start the ROM checksum timeout before the complete loader has
+            # physically left the host UART.  The 2964-byte loader alone needs more
+            # than three seconds at 9600 baud, and some SC14452 revisions take longer
+            # before returning its XOR checksum.
+            port.flush()
+            expected = 0
+            for byte in loader:
+                expected ^= byte
+
+            got = read_byte(port, rom_timeout)
+            if got is None:
+                raise TimeoutError("ROM did not send a checksum")
+            if got != expected:
+                raise RuntimeError(
+                    f"loader checksum mismatch: expected 0x{expected:02x}, "
+                    f"got 0x{got:02x}"
+                )
+            print(f"Loader checksum OK (0x{expected:02x})", flush=True)
+            port.write(bytes([ROM_ACK]))
+            port.flush()
             break
+        except (TimeoutError, RuntimeError) as exc:
+            last_error = exc
+            if not rom_detected or attempt >= rom_attempts:
+                raise
+            print(
+                f"ROM upload attempt {attempt}/{rom_attempts} failed: {exc}; retrying",
+                file=sys.stderr,
+                flush=True,
+            )
+    else:  # pragma: no cover - loop either succeeds or raises
+        raise RuntimeError("ROM loader upload failed") from last_error
 
-    print("ROM detected, sending loader header", flush=True)
-    port.write(struct.pack("<BH", ROM_SOH, len(loader)))
-
-    deadline = time.monotonic() + rom_timeout
-    while True:
-        if time.monotonic() >= deadline:
-            raise TimeoutError("ROM did not acknowledge the header")
-        reply = port.read(1)
-        if not reply or reply[0] == ROM_STX:
-            continue
-        if reply[0] == ROM_NAK:
-            raise RuntimeError("ROM rejected the loader length")
-        if reply[0] != ROM_ACK:
-            raise RuntimeError(f"unexpected ROM reply 0x{reply[0]:02x}")
-        break
-
-    print("Sending loader body", flush=True)
-    port.write(loader)
-    # Do not start the ROM checksum timeout before the complete loader has
-    # physically left the host UART.  The 2964-byte loader alone needs more
-    # than three seconds at 9600 baud, and some SC14452 revisions take longer
-    # before returning its XOR checksum.
-    port.flush()
-    expected = 0
-    for byte in loader:
-        expected ^= byte
-
-    got = read_byte(port, rom_timeout)
-    if got is None:
-        raise TimeoutError("ROM did not send a checksum")
-    if got != expected:
-        raise RuntimeError(
-            f"loader checksum mismatch: expected 0x{expected:02x}, got 0x{got:02x}"
-        )
-    print(f"Loader checksum OK (0x{expected:02x})", flush=True)
-    port.write(bytes([ROM_ACK]))
-    port.flush()
     # Switching speed immediately causes a glitch on the line and the ROM
     # does not jump into the payload. The loader has a DELAY(1000) (~906 ms)
     # before its first output, so this delay is safe on both ends.
@@ -197,6 +221,12 @@ def main() -> int:
             "programmer (default: 60)"
         ),
     )
+    parser.add_argument(
+        "--rom-attempts",
+        type=int,
+        default=3,
+        help="automatic ROM loader upload attempts after a detected STX (default: 3)",
+    )
     parser.add_argument("--prog-timeout", type=float, default=900.0)
     parser.add_argument(
         "--confirm-erase",
@@ -218,6 +248,9 @@ def main() -> int:
     if args.rom_timeout <= 0:
         print("ERROR: --rom-timeout must be greater than zero", file=sys.stderr)
         return 2
+    if args.rom_attempts <= 0:
+        print("ERROR: --rom-attempts must be greater than zero", file=sys.stderr)
+        return 2
     if not args.confirm_erase:
         print(
             "\nERROR: --confirm-erase is missing. This tool erases the whole\n"
@@ -228,7 +261,9 @@ def main() -> int:
         return 2
 
     with serial.Serial(args.port, 9600, timeout=0.2) as port:
-        upload_loader(port, loader, args.wait, args.rom_timeout)
+        upload_loader(
+            port, loader, args.wait, args.rom_timeout, args.rom_attempts
+        )
         send_image(port, image, args.prog_timeout)
 
     print("\nDONE. Verify the write with a fresh dump and a sha256 comparison.")

@@ -61,9 +61,10 @@ class FakeSerial:
         self.baudrate = 9600
         self.timeout = 0.2
         self.flush_count = 0
+        self.reset_input_count = 0
 
     def reset_input_buffer(self) -> None:
-        pass
+        self.reset_input_count += 1
 
     def read(self, _size: int = 1) -> bytes:
         return self.incoming.pop(0) if self.incoming else b""
@@ -106,6 +107,33 @@ class UartLoaderTests(unittest.TestCase):
         )
         self.assertGreaterEqual(port.flush_count, 2)
         self.assertEqual(port.baudrate, 115200)
+        self.assertTrue(port.dtr)
+        self.assertTrue(port.rts)
+        self.assertEqual(port.reset_input_count, 0)
+
+    def test_dump_retries_when_rom_restarts_during_checksum(self) -> None:
+        loader = b"\x89"
+        port = FakeSerial(
+            [
+                bytes([uart_dump.ROM_STX]),
+                bytes([uart_dump.ROM_ACK]),
+                bytes([uart_dump.ROM_STX]),
+                bytes([uart_dump.ROM_STX]),
+                bytes([uart_dump.ROM_ACK]),
+                bytes([0x89]),
+            ]
+        )
+        with (
+            mock.patch.object(uart_dump.serial, "Serial", return_value=port),
+            mock.patch.object(uart_dump.time, "sleep"),
+        ):
+            uart_dump.upload_loader("/dev/ttyACM1", loader, 1, 60)
+
+        header = struct.pack("<BH", uart_dump.ROM_SOH, len(loader))
+        self.assertEqual(
+            port.writes,
+            [header, loader, header, loader, bytes([uart_dump.ROM_ACK])],
+        )
 
     def test_flash_upload_accepts_delayed_loader_checksum_0x89(self) -> None:
         # This tests only the ROM-to-RAM loader upload.  It never reaches the
@@ -132,6 +160,29 @@ class UartLoaderTests(unittest.TestCase):
         )
         self.assertGreaterEqual(port.flush_count, 2)
         self.assertEqual(port.baudrate, 115200)
+        self.assertTrue(port.dtr)
+        self.assertTrue(port.rts)
+        self.assertEqual(port.reset_input_count, 0)
+
+    def test_flash_retries_when_rom_rejects_loader_length(self) -> None:
+        loader = b"\x89"
+        port = FakeSerial(
+            [
+                bytes([uart_flash.ROM_STX]),
+                bytes([uart_flash.ROM_NAK]),
+                bytes([uart_flash.ROM_STX]),
+                bytes([uart_flash.ROM_ACK]),
+                bytes([0x89]),
+            ]
+        )
+        with mock.patch.object(uart_flash.time, "sleep"):
+            uart_flash.upload_loader(port, loader, 1, 60)
+
+        header = struct.pack("<BH", uart_flash.ROM_SOH, len(loader))
+        self.assertEqual(
+            port.writes,
+            [header, header, loader, bytes([uart_flash.ROM_ACK])],
+        )
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ ROM_ACK = 0x06
 ROM_NAK = 0x15
 DUMP_MAGIC = b"GIGA452D"
 DUMP_DONE = b"DONE"
+SERIAL_OPEN_SETTLE_SECONDS = 0.5
 
 
 def read_until_byte(port: serial.Serial, wanted: int, timeout: float) -> None:
@@ -59,45 +60,72 @@ def upload_loader(
     loader: bytes,
     wait_seconds: float,
     rom_timeout: float,
+    rom_attempts: int = 3,
 ) -> serial.Serial:
     port = serial.Serial(port_name, 9600, timeout=0.2)
-    port.dtr = False
-    port.rts = False
-    port.reset_input_buffer()
-    print(f"Waiting for SC14452 ROM STX on {port_name} ...", flush=True)
-    read_until_byte(port, ROM_STX, wait_seconds)
-    print("ROM bootloader detected; uploading read-only RAM loader", flush=True)
-    port.write(struct.pack("<BH", ROM_SOH, len(loader)))
+    # Leave modem-control lines alone.  Some USB-UART drivers briefly glitch
+    # DTR/RTS when they are changed immediately after open(), and some Linux
+    # adapters then lose the ROM handshake.  Do not discard input either: the
+    # SC14452 may already have placed the first STX in the receive buffer.
+    time.sleep(SERIAL_OPEN_SETTLE_SECONDS)
+    last_error: Exception | None = None
+    for attempt in range(1, rom_attempts + 1):
+        rom_detected = False
+        try:
+            print(f"Waiting for SC14452 ROM STX on {port_name} ...", flush=True)
+            # A failed upload returns to the mask ROM quickly, so retries do
+            # not need the full initial power-on allowance.
+            stx_timeout = wait_seconds if attempt == 1 else min(wait_seconds, 15)
+            read_until_byte(port, ROM_STX, stx_timeout)
+            rom_detected = True
+            print("ROM bootloader detected; uploading read-only RAM loader", flush=True)
+            port.write(struct.pack("<BH", ROM_SOH, len(loader)))
 
-    deadline = time.monotonic() + rom_timeout
-    while True:
-        if time.monotonic() >= deadline:
-            raise TimeoutError("ROM did not acknowledge loader header")
-        reply = port.read(1)
-        if not reply or reply[0] == ROM_STX:
-            continue
-        if reply[0] == ROM_NAK:
-            raise RuntimeError("ROM rejected loader length")
-        if reply[0] != ROM_ACK:
-            raise RuntimeError(f"unexpected ROM reply 0x{reply[0]:02x}")
-        break
+            deadline = time.monotonic() + rom_timeout
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("ROM did not acknowledge loader header")
+                reply = port.read(1)
+                if not reply or reply[0] == ROM_STX:
+                    continue
+                if reply[0] == ROM_NAK:
+                    raise RuntimeError("ROM rejected loader length")
+                if reply[0] != ROM_ACK:
+                    raise RuntimeError(f"unexpected ROM reply 0x{reply[0]:02x}")
+                break
 
-    port.write(loader)
-    # Wait until the complete loader has left the host-side UART buffer before
-    # starting the checksum timeout.  At 9600 baud the current 2964-byte loader
-    # alone needs a little over three seconds on the wire, and some SC14452 ROM
-    # revisions take several more seconds before returning its XOR byte.
-    port.flush()
-    expected_xor = 0
-    for byte in loader:
-        expected_xor ^= byte
-    received = read_exact(port, 1, rom_timeout)[0]
-    if received != expected_xor:
-        raise RuntimeError(
-            f"loader checksum mismatch: expected 0x{expected_xor:02x}, got 0x{received:02x}"
-        )
-    port.write(bytes([ROM_ACK]))
-    port.flush()
+            port.write(loader)
+            # Wait until the complete loader has left the host-side UART buffer before
+            # starting the checksum timeout.  At 9600 baud the current 2964-byte loader
+            # alone needs a little over three seconds on the wire, and some SC14452 ROM
+            # revisions take several more seconds before returning its XOR byte.
+            port.flush()
+            expected_xor = 0
+            for byte in loader:
+                expected_xor ^= byte
+            received = read_exact(port, 1, rom_timeout)[0]
+            if received != expected_xor:
+                raise RuntimeError(
+                    f"loader checksum mismatch: expected 0x{expected_xor:02x}, "
+                    f"got 0x{received:02x}"
+                )
+            port.write(bytes([ROM_ACK]))
+            port.flush()
+            break
+        except (TimeoutError, RuntimeError) as exc:
+            last_error = exc
+            if not rom_detected or attempt >= rom_attempts:
+                port.close()
+                raise
+            print(
+                f"ROM upload attempt {attempt}/{rom_attempts} failed: {exc}; retrying",
+                file=sys.stderr,
+                flush=True,
+            )
+    else:  # pragma: no cover - loop either succeeds or raises
+        port.close()
+        raise RuntimeError("ROM loader upload failed") from last_error
+
     # Prepnuti rychlosti hned po ACK vyvola na lince zakmit, ktery ROM utne
     # skok do payloadu. Nechame linku chvili v klidu; loader ma pred odeslanim
     # hlavicky DELAY(1000), coz je zmerenych ~906 ms, takze rezerva staci.
@@ -178,6 +206,12 @@ def main() -> int:
             "(default: 60; older/slower bases may need more)"
         ),
     )
+    parser.add_argument(
+        "--rom-attempts",
+        type=int,
+        default=3,
+        help="automatic ROM loader upload attempts after a detected STX (default: 3)",
+    )
     args = parser.parse_args()
 
     loader = args.loader.read_bytes()
@@ -185,7 +219,11 @@ def main() -> int:
         raise RuntimeError(f"invalid loader size: {len(loader)}")
     if args.rom_timeout <= 0:
         raise RuntimeError("--rom-timeout must be greater than zero")
-    port = upload_loader(args.port, loader, args.wait, args.rom_timeout)
+    if args.rom_attempts <= 0:
+        raise RuntimeError("--rom-attempts must be greater than zero")
+    port = upload_loader(
+        args.port, loader, args.wait, args.rom_timeout, args.rom_attempts
+    )
     try:
         dump_flash(port, args.output)
     finally:
