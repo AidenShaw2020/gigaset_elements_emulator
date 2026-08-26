@@ -84,7 +84,8 @@ you need to read that base's flash:
    side with the ethernet jack down, left to right: **URX / GND / UTX**.
 <img width="600" height="320" alt="image" src="https://github.com/user-attachments/assets/6bfc5fba-f236-435c-818c-1024b7ca2d39" />
 
-3. `python tools/gigaset_uart_dump.py --port COM3 --loader 452dump.bin --output flash.bin`
+3. Install PySerial once with `python -m pip install "pyserial>=3.5,<4"`, then run
+   `python tools/gigaset_uart_dump.py --port COM3 --loader 452dump.bin --output flash.bin`.
    This host only uploads the RAM-resident loader built in step 1 and
    receives bytes back - it never sends an erase or program command. Eight
    megabytes take about thirteen minutes. ROM revisions vary in speed; the
