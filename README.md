@@ -439,7 +439,6 @@ the broken unit's own MAC, DECT pairing data and cryptographic identity.
 
 ## Roadmap
 
-- Multi-base support
 - Pattern editor instead of a fixed list
 - Optional recording of the base station's own diagnostic log uploads
 
