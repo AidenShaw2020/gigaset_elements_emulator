@@ -58,7 +58,12 @@ def read_byte(port: serial.Serial, timeout: float) -> int | None:
     return None
 
 
-def upload_loader(port: serial.Serial, loader: bytes, wait_seconds: float) -> None:
+def upload_loader(
+    port: serial.Serial,
+    loader: bytes,
+    wait_seconds: float,
+    rom_timeout: float,
+) -> None:
     port.dtr = False
     port.rts = False
     port.reset_input_buffer()
@@ -75,7 +80,7 @@ def upload_loader(port: serial.Serial, loader: bytes, wait_seconds: float) -> No
     print("ROM detected, sending loader header", flush=True)
     port.write(struct.pack("<BH", ROM_SOH, len(loader)))
 
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + rom_timeout
     while True:
         if time.monotonic() >= deadline:
             raise TimeoutError("ROM did not acknowledge the header")
@@ -90,11 +95,16 @@ def upload_loader(port: serial.Serial, loader: bytes, wait_seconds: float) -> No
 
     print("Sending loader body", flush=True)
     port.write(loader)
+    # Do not start the ROM checksum timeout before the complete loader has
+    # physically left the host UART.  The 2964-byte loader alone needs more
+    # than three seconds at 9600 baud, and some SC14452 revisions take longer
+    # before returning its XOR checksum.
+    port.flush()
     expected = 0
     for byte in loader:
         expected ^= byte
 
-    got = read_byte(port, 10)
+    got = read_byte(port, rom_timeout)
     if got is None:
         raise TimeoutError("ROM did not send a checksum")
     if got != expected:
@@ -178,6 +188,15 @@ def main() -> int:
     parser.add_argument("--loader", required=True, help="path to 452fp.bin")
     parser.add_argument("--image", required=True, help="image to write to flash")
     parser.add_argument("--wait", type=float, default=120.0)
+    parser.add_argument(
+        "--rom-timeout",
+        type=float,
+        default=60.0,
+        help=(
+            "seconds to wait for each SC14452 ROM reply while uploading the "
+            "programmer (default: 60)"
+        ),
+    )
     parser.add_argument("--prog-timeout", type=float, default=900.0)
     parser.add_argument(
         "--confirm-erase",
@@ -196,6 +215,9 @@ def main() -> int:
     if len(image) > FLASH_SIZE:
         print("ERROR: image is larger than flash", file=sys.stderr)
         return 2
+    if args.rom_timeout <= 0:
+        print("ERROR: --rom-timeout must be greater than zero", file=sys.stderr)
+        return 2
     if not args.confirm_erase:
         print(
             "\nERROR: --confirm-erase is missing. This tool erases the whole\n"
@@ -206,7 +228,7 @@ def main() -> int:
         return 2
 
     with serial.Serial(args.port, 9600, timeout=0.2) as port:
-        upload_loader(port, loader, args.wait)
+        upload_loader(port, loader, args.wait, args.rom_timeout)
         send_image(port, image, args.prog_timeout)
 
     print("\nDONE. Verify the write with a fresh dump and a sha256 comparison.")

@@ -54,7 +54,12 @@ def fnv1a_update(value: int, data: bytes) -> int:
     return value
 
 
-def upload_loader(port_name: str, loader: bytes, wait_seconds: float) -> serial.Serial:
+def upload_loader(
+    port_name: str,
+    loader: bytes,
+    wait_seconds: float,
+    rom_timeout: float,
+) -> serial.Serial:
     port = serial.Serial(port_name, 9600, timeout=0.2)
     port.dtr = False
     port.rts = False
@@ -64,7 +69,7 @@ def upload_loader(port_name: str, loader: bytes, wait_seconds: float) -> serial.
     print("ROM bootloader detected; uploading read-only RAM loader", flush=True)
     port.write(struct.pack("<BH", ROM_SOH, len(loader)))
 
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + rom_timeout
     while True:
         if time.monotonic() >= deadline:
             raise TimeoutError("ROM did not acknowledge loader header")
@@ -78,10 +83,15 @@ def upload_loader(port_name: str, loader: bytes, wait_seconds: float) -> serial.
         break
 
     port.write(loader)
+    # Wait until the complete loader has left the host-side UART buffer before
+    # starting the checksum timeout.  At 9600 baud the current 2964-byte loader
+    # alone needs a little over three seconds on the wire, and some SC14452 ROM
+    # revisions take several more seconds before returning its XOR byte.
+    port.flush()
     expected_xor = 0
     for byte in loader:
         expected_xor ^= byte
-    received = read_exact(port, 1, 5)[0]
+    received = read_exact(port, 1, rom_timeout)[0]
     if received != expected_xor:
         raise RuntimeError(
             f"loader checksum mismatch: expected 0x{expected_xor:02x}, got 0x{received:02x}"
@@ -159,12 +169,23 @@ def main() -> int:
     parser.add_argument("--loader", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--wait", type=float, default=180)
+    parser.add_argument(
+        "--rom-timeout",
+        type=float,
+        default=60,
+        help=(
+            "seconds to wait for each ROM reply while uploading the loader "
+            "(default: 60; older/slower bases may need more)"
+        ),
+    )
     args = parser.parse_args()
 
     loader = args.loader.read_bytes()
     if not loader or len(loader) > 0xFFFF:
         raise RuntimeError(f"invalid loader size: {len(loader)}")
-    port = upload_loader(args.port, loader, args.wait)
+    if args.rom_timeout <= 0:
+        raise RuntimeError("--rom-timeout must be greater than zero")
+    port = upload_loader(args.port, loader, args.wait, args.rom_timeout)
     try:
         dump_flash(port, args.output)
     finally:

@@ -87,9 +87,14 @@ you need to read that base's flash:
 3. `python tools/gigaset_uart_dump.py --port COM3 --loader 452dump.bin --output flash.bin`
    This host only uploads the RAM-resident loader built in step 1 and
    receives bytes back - it never sends an erase or program command. Eight
-   megabytes take about thirteen minutes.
+   megabytes take about thirteen minutes. ROM revisions vary in speed; the
+   script waits up to 60 seconds for each loader-upload reply. If an unusually
+   slow base still times out while returning the loader checksum, increase it,
+   for example with `--rom-timeout 120`.
 4. `python -m pip install jefferson`
 5. `python tools/extract_base_manifest.py flash.bin -o cre_manifest.json`
+   The extractor accepts up to one 4 KiB erase block of aligned padding before
+   the first JFFS2 node, as found on some `S30851-S2551-N101-6` bases.
 6. Copy the result to `/share/gigaset/cre_manifest.<base_key>.json` (add-on) or
    point `cre_manifest_file` at it (script) - `<base_key>` is that base's own
    LAN IP address with dots replaced by underscores (`192.0.2.50` becomes

@@ -252,6 +252,11 @@ removing power or leaving ROM mode. Then power-cycle into a normal boot
 and confirm the base reaches this gateway - that is a more reliable check
 than the vendor's own write verification (see Golden rule 6).
 
+If the ROM is unusually slow while it accepts `452fp.bin`, pass
+`--rom-timeout 120` (or a longer value) to the flash tool.  This changes only
+the pre-write loader-upload waits; it does not extend, retry, or otherwise
+alter the erase/program operation once `PROG_ACK` has been sent.
+
 ## If the base still rejects the gateway's certificate after this
 
 A base whose own certificate was never valid is more likely to reject the

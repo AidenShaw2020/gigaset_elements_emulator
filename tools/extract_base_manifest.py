@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,26 @@ from typing import Any
 # Rozlozeni flash pameti zakladny bas-002.012.002 (MX25L6405D, 8 MiB).
 DATA_PARTITIONS = (("fs1", 0x00359000, 1112 * 1024), ("fs2", 0x006E0000, 1112 * 1024))
 JFFS2_MAGIC = b"\x85\x19"
+JFFS2_HEADER_SIZE = 12
+JFFS2_SCAN_LIMIT = 4096
+
+
+def find_jffs2_start(chunk: bytes, scan_limit: int = JFFS2_SCAN_LIMIT) -> int | None:
+    """Return a plausible, 4-byte-aligned JFFS2 start near the partition edge.
+
+    Some base revisions leave a few erased/padding bytes before the first JFFS2
+    node.  Jefferson expects the first node at offset zero, so locate and remove
+    that leading padding while avoiding an arbitrary magic sequence in payload
+    data by validating the common node header and total length.
+    """
+    end = min(len(chunk), max(scan_limit, 0))
+    for offset in range(0, max(0, end - JFFS2_HEADER_SIZE + 1), 4):
+        if chunk[offset : offset + 2] != JFFS2_MAGIC:
+            continue
+        total_length = struct.unpack_from("<I", chunk, offset + 4)[0]
+        if JFFS2_HEADER_SIZE <= total_length <= len(chunk) - offset:
+            return offset
+    return None
 
 
 def carve(image: bytes, directory: Path) -> list[Path]:
@@ -34,9 +55,19 @@ def carve(image: bytes, directory: Path) -> list[Path]:
     carved: list[Path] = []
     for name, offset, size in DATA_PARTITIONS:
         chunk = image[offset : offset + size]
-        if not chunk.startswith(JFFS2_MAGIC):
-            print(f"{name}: na offsetu {offset:#x} neni JFFS2, preskakuji")
+        jffs2_start = find_jffs2_start(chunk)
+        if jffs2_start is None:
+            print(
+                f"{name}: v prvnich {min(len(chunk), JFFS2_SCAN_LIMIT)} bajtech "
+                f"od offsetu {offset:#x} neni platna JFFS2 hlavicka, preskakuji"
+            )
             continue
+        if jffs2_start:
+            print(
+                f"{name}: JFFS2 zacina o {jffs2_start} bajtu pozdeji "
+                f"({offset + jffs2_start:#x}); odstranuji uvodni vypln"
+            )
+            chunk = chunk[jffs2_start:]
         target = directory / f"{name}.bin"
         target.write_bytes(chunk)
         carved.append(target)
