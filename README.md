@@ -16,6 +16,13 @@ two-step calibration - see below).
 > identify the hardware this gateway is compatible with. Use it only on base
 > stations and sensors you own or are authorised to administer.
 
+## Related project
+
+Looking for support for the discontinued Gigaset/Y-cam **Gen1 camera** rather
+than the base station and sensors? See [Gigaset Elements Camera](https://github.com/AidenShaw2020/gigaset_elements_camera),
+which provides local camera management, cloud-free operation and an optional
+Home Assistant gateway.
+
 ## What works
 
 - The base accepts a self-signed certificate; it does not pin or validate the
