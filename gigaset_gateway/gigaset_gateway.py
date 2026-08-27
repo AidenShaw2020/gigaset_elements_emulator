@@ -8,6 +8,7 @@ import socket
 import ssl
 import threading
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
@@ -36,6 +37,7 @@ DEVICE_NAMES = {
     "ps02": "Gigaset detektor pohybu",
     "bn01": "Gigaset tlacitko",
     "is01": "Gigaset sirena",
+    "ts01": "Gigaset termostat",
 }
 
 # Typy, ktere hlasi polohu, a jejich slovnik.  "tilt" je sklopene okno; chodi
@@ -108,6 +110,7 @@ BUTTON_SUBTYPES = {
 # pri odparovani, kdy je nutne retained dokumenty aktivne smazat - jinak by
 # zarizeni v Home Assistantu zustalo navzdy.
 DISCOVERY_SUFFIXES = (
+    ("climate", "_climate"),
     ("sensor", "_battery"),
     ("sensor", "_battery_voltage"),
     ("sensor", "_position"),
@@ -116,10 +119,12 @@ DISCOVERY_SUFFIXES = (
     ("sensor", "_ver"),
     ("sensor", "_hwver"),
     ("sensor", "_event"),
+    ("sensor", "_thermostat_status"),
     ("binary_sensor", "_contact"),
     ("binary_sensor", "_tilt"),
     ("binary_sensor", "_motion"),
     ("binary_sensor", "_siren"),
+    ("binary_sensor", "_battery_saver"),
     ("siren", "_siren"),
     ("select", "_pattern"),
     ("button", "_unpair"),
@@ -156,6 +161,11 @@ STATE_TOPICS = (
     "tilt",
     "calibration",
     "temperature",
+    "setpoint",
+    "mode",
+    "thermostat_state",
+    "thermostat_status",
+    "battery_saver",
     "ver",
     "hwver",
     "last_event",
@@ -283,6 +293,9 @@ CONTROL_ACTIONS = {
     # "command".  Slovnik ULE prikazu neni v binarkach zakladny - ta text jen
     # prepolsi - ale pro um01 je vycteny z firmwaru uzlu, viz UM01_FIRMWARE.md.
     "endnode_command": ("endnode", lambda _device_id: ""),
+    # Termostat se ovlada pres puvodni ts01.set_setpoint(), aby zustal zachovan
+    # priority_manager i retry po dalsim state/reportu spiciho koncoveho uzlu.
+    "thermostat_setpoint": ("thermostat", lambda _device_id: ""),
     # Rucni ovladani sireny.  Jde primo na uzel stejnym prikazem, jaky posila
     # firmware v is01.on_unmanaged / off_unmanaged, tedy s obejitim
     # priority_manageru - probihajici poplach muze sirenu vzapeti prepnout zpet.
@@ -326,6 +339,7 @@ CONTROL_ACTIONS_NEEDING_DEVICE = {
     "calibrate_step2",
     "cal_reset",
     "endnode_command",
+    "thermostat_setpoint",
     "siren_on",
     "siren_off",
     *(f"pattern_{name}" for name in SIREN_PATTERNS),
@@ -337,6 +351,13 @@ CONTROL_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
 # Volny prikaz pro koncovy uzel.  Konci v Lua literalu a pak na DECT lince,
 # takze projde jen to, co vypada jako "cal", "set=hbtime,60" nebo "pattern=2h,2D".
 ENDNODE_COMMAND_RE = re.compile(r"[a-z0-9=,;._-]{1,48}")
+
+# Hodnota z MQTT se nesmi stat volnym Lua argumentem. Decimalni tvar i rozsah
+# se kontroluji pred serializaci do radkoveho protokolu gwctl. Rozsah 5-30 C
+# odpovida TS01 a umoznuje vsechny hodnoty, ktere nabizi climate entita.
+THERMOSTAT_SETPOINT_RE = re.compile(r"(?:[0-9]|[12][0-9]|30)(?:\.[0-9]{1,2})?")
+TS01_MIN_TEMPERATURE = Decimal("5")
+TS01_MAX_TEMPERATURE = Decimal("30")
 
 # Hlaseni z Lua knihoven zakladny.  Zadny jiny pristup k jejich logu neexistuje
 # (seriova konzole je ve firmwaru vypnuta), takze se vypisuji na stdout.
@@ -526,6 +547,25 @@ local function endnode(label, cmd, dev, devtype)
     ule_command_send(devtype, dev, cmd)
 end
 
+-- Nastaveni cilove teploty termostatu. Stock knihovna ts01 hodnotu posle pres
+-- priority_manager a pri pozdejsim state/report ji v pripade neshody zopakuje.
+-- Volny text sem neprojde: Python pred zarazenim do fronty kontroluje typ, id,
+-- decimalni tvar i podporovany rozsah hodnoty.
+local function thermostat(label, temperature, dev, devtype)
+    if devtype ~= "ts01" or type(ts01) ~= "table"
+        or type(ts01.set_setpoint) ~= "function" then
+        log("gwctl {} termostat {} neni dostupny", label, dev)
+        return
+    end
+    local value = tonumber(temperature)
+    if value == nil then
+        log("gwctl {} neplatna teplota {}", label, temperature)
+        return
+    end
+    log("gwctl {} ts01.set_setpoint {} {}", label, dev, temperature)
+    ts01.set_setpoint(dev, value, 0)
+end
+
 -- Prepnuti rezimu alarmu.  Stejnou cestou to dela i pravidlo navazane na
 -- tlacitko bn01, takze zakladna zmenu potvrdi udalosti
 -- alarm.*.settings_changed.mode a vsichni ostatni ji uvidi.
@@ -608,6 +648,7 @@ local HANDLERS = {
     ule = ule,
     pairon = pairon,
     endnode = endnode,
+    thermostat = thermostat,
     alarmmode = alarmmode,
     localevent = localevent,
     cleanup = cleanup,
@@ -731,6 +772,63 @@ def temperature_from_payload(sink: str, payload: str) -> float | None:
         return int(field.strip().replace(".", "")) / 10
     except ValueError:
         return None
+
+
+def ts01_state_from_payload(payload: str) -> dict[str, Any] | None:
+    """Rozlozit stock TS01 state bez pojmenovavani dosud neznamych poli.
+
+    Stock ts01 knihovna cte prvni tri polozky jako stav, teplotu a setpoint.
+    Setpoint deli 100; stock climate rule druhe pole nasobi 10 pro svou
+    interni milli-Celsius reprezentaci, tedy obe hodnoty jsou setiny stupne.
+    """
+    parts = payload.split(";")
+    if len(parts) < 3 or not parts[0]:
+        return None
+    try:
+        raw_temperature = int(parts[1])
+        raw_setpoint = int(parts[2])
+    except ValueError:
+        return None
+    # Jen ochrana pred zjevne poskozenou zpravou; zaporne aktualni teploty jsou
+    # platne, ale cil mimo fyzicky rozsah TS01 nikoli.
+    if not -5000 <= raw_temperature <= 10000:
+        return None
+    if not 500 <= raw_setpoint <= 3000:
+        return None
+    battery_values: list[int] | None = None
+    if len(parts) >= 4:
+        try:
+            candidate = [int(value) for value in parts[3].split(",")]
+        except ValueError:
+            candidate = []
+        # Stejny triplet a stejny rozsah jako samostatny sink "ba". U TS01 se
+        # navic meni zatizena hodnota pri pohybu motoru, zatimco klidova zustava
+        # stabilni. Proto ho lze predat existujicimu battery parseru.
+        if len(candidate) == 3 and all(1000 <= value <= 5000 for value in candidate):
+            battery_values = candidate
+    return {
+        "status": parts[0],
+        "current_temperature": raw_temperature / 100,
+        "target_temperature": raw_setpoint / 100,
+        "raw_temperature": raw_temperature,
+        "raw_setpoint": raw_setpoint,
+        "battery_values_mv": battery_values,
+        "extra_fields": parts[3:],
+        "raw": payload,
+    }
+
+
+def ts01_battery_saver_from_payload(payload: str) -> bool | None:
+    """Vyhodnotit potvrzeni stock runtime konfigurace TS01 z mreport."""
+    prefix = "runtime_cfg_ctx;"
+    if not payload.startswith(prefix):
+        return None
+    values = set(payload[len(prefix) :].split(","))
+    if values == {"hbtime/900", "hbdiv/1", "lcdoff/on"}:
+        return True
+    if values == {"hbtime/150", "hbdiv/6", "lcdoff/off"}:
+        return False
+    return None
 
 
 def pressure_from_payload(payload: str) -> float | None:
@@ -923,8 +1021,8 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
             raise ValueError(f"Control request {request_id} has invalid device_id")
     else:
         device_id = ""
-    if CONTROL_ACTIONS[action][0] == "endnode":
-        # ule_command_send needs the device type as its first argument.
+    if CONTROL_ACTIONS[action][0] in {"endnode", "thermostat"}:
+        # ule_command_send and the thermostat handler need the device type.
         if ENDNODE_TYPE_RE.fullmatch(device_type) is None:
             raise ValueError(f"Control request {request_id} needs a valid device_type")
     else:
@@ -936,6 +1034,23 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
     elif action == "endnodes_cleanup":
         if ENDNODE_ID_LIST_RE.fullmatch(command) is None:
             raise ValueError(f"Control request {request_id} has invalid endnode id list")
+    elif action == "thermostat_setpoint":
+        if (
+            device_type != "ts01"
+            or THERMOSTAT_SETPOINT_RE.fullmatch(command) is None
+        ):
+            raise ValueError(f"Control request {request_id} has invalid thermostat setpoint")
+        try:
+            value = Decimal(command)
+        except InvalidOperation as exc:
+            raise ValueError(
+                f"Control request {request_id} has invalid thermostat setpoint"
+            ) from exc
+        if not TS01_MIN_TEMPERATURE <= value <= TS01_MAX_TEMPERATURE:
+            raise ValueError(
+                f"Control request {request_id} thermostat setpoint is out of range"
+            )
+        command = format(value.normalize(), "f")
     else:
         command = ""
     return {
@@ -951,7 +1066,7 @@ class MqttBridge:
     def __init__(
         self,
         config: dict[str, Any],
-        command_handler: Callable[[str, str, str, str], None] | None = None,
+        command_handler: Callable[..., None] | None = None,
         on_connected: Callable[[], None] | None = None,
     ) -> None:
         self.config = config
@@ -962,6 +1077,11 @@ class MqttBridge:
         self.discovery_prefix = config.get("discovery_prefix", "homeassistant")
         # Discovery dokumenty jsou retained, staci je poslat jednou.
         self.announced: set[str] = set()
+        # Stejne tema muze byt nejdriv zruseno (migrace stare entity) a pozdeji
+        # znovu vytvoreno. Samostatna mnozina zabrani opakovanemu mazani, aniz by
+        # blokovala budouci discovery.
+        self.removed: set[str] = set()
+        self.legacy_ts01_cleared: set[str] = set()
         # Zakladny, kterym uz byl vystaven vychozi rezim alarmu.
         self.seeded_modes: set[str] = set()
         self.replaying = False
@@ -1007,6 +1127,7 @@ class MqttBridge:
         client.subscribe(f"{self.base_topic}/base/+/control/+")
         client.subscribe(f"{self.base_topic}/base/+/mode/set")
         client.subscribe(f"{self.base_topic}/+/+/command")
+        client.subscribe(f"{self.base_topic}/ts01/+/setpoint/set")
         client.publish(f"{self.base_topic}/availability", "online", retain=True)
         if self.on_connected is not None:
             try:
@@ -1042,6 +1163,18 @@ class MqttBridge:
                 if mode in ALARM_MODES:
                     self.publish(f"{self.base_topic}/base/{parts[2]}/mode", mode)
                 self.command_handler(f"mode_{mode}", "", "", parts[2])
+            elif (
+                len(parts) == 5
+                and parts[1] == "ts01"
+                and parts[3:5] == ["setpoint", "set"]
+            ):
+                value = message.payload.decode("utf-8", "replace").strip()
+                # Cilova zakladna se dohleda podle posledni udalosti tohoto TS01.
+                # Stav se zamerne nenastavuje optimisticky; climate ukaze az
+                # hodnotu, kterou termostat skutecne potvrdi v dalsim state.
+                self.command_handler(
+                    "thermostat_setpoint", "ts01", parts[2], "", value
+                )
             elif len(parts) == 4 and parts[3] == "command":
                 action = message.payload.decode("utf-8", "replace").strip()
                 if action.startswith("{"):
@@ -1194,15 +1327,17 @@ class MqttBridge:
         topic = f"{self.discovery_prefix}/{component}/{object_id}/config"
         if topic in self.announced:
             return
+        self.removed.discard(topic)
         self.announced.add(topic)
         self.publish(topic, json.dumps(payload, separators=(",", ":")), retain=True)
 
     def remove_discovery(self, component: str, object_id: str) -> None:
         """Smazat retained discovery dokument, ktery uz nema mit protejsek."""
         topic = f"{self.discovery_prefix}/{component}/{object_id}/config"
-        if topic in self.announced:
+        if topic in self.removed:
             return
-        self.announced.add(topic)
+        self.announced.discard(topic)
+        self.removed.add(topic)
         self.publish(topic, "", retain=True)
 
     @staticmethod
@@ -1438,6 +1573,95 @@ class MqttBridge:
             },
         )
 
+    def _ts01_climate(
+        self,
+        root: str,
+        object_id: str,
+        common: dict[str, Any],
+        state: dict[str, Any],
+    ) -> None:
+        """Vystavit potvrzeny stav TS01 jako MQTT climate a diagnostiku."""
+        current = float(state["current_temperature"])
+        target = float(state["target_temperature"])
+        status = str(state["status"]).lower()
+        self.publish(f"{root}/temperature", f"{current:.2f}")
+        self.publish(f"{root}/setpoint", f"{target:.2f}")
+        self.publish(f"{root}/mode", "heat")
+        self.publish(f"{root}/thermostat_status", status)
+        self.publish(
+            f"{root}/thermostat_state",
+            json.dumps(state, separators=(",", ":")),
+        )
+        self.discovery(
+            "climate",
+            object_id + "_climate",
+            {
+                **common,
+                "name": "Thermostat",
+                "current_temperature_topic": f"{root}/temperature",
+                "temperature_state_topic": f"{root}/setpoint",
+                "temperature_command_topic": f"{root}/setpoint/set",
+                "mode_state_topic": f"{root}/mode",
+                "modes": ["heat"],
+                "temperature_unit": "C",
+                "min_temp": float(TS01_MIN_TEMPERATURE),
+                "max_temp": float(TS01_MAX_TEMPERATURE),
+                "temp_step": 0.5,
+                "precision": 0.1,
+                "json_attributes_topic": f"{root}/thermostat_state",
+                "unique_id": object_id + "_climate",
+            },
+        )
+        self.discovery(
+            "sensor",
+            object_id + "_thermostat_status",
+            {
+                **common,
+                "name": "Thermostat status",
+                "state_topic": f"{root}/thermostat_status",
+                "entity_category": "diagnostic",
+                "icon": "mdi:radiator",
+                "unique_id": object_id + "_thermostat_status",
+            },
+        )
+        battery_values = state.get("battery_values_mv")
+        if isinstance(battery_values, list):
+            self._battery(
+                root,
+                object_id,
+                common,
+                ",".join(str(value) for value in battery_values),
+            )
+        # Verze pred podporou TS01 vytvorila z celeho state diagnosticky
+        # "Last event". Oba retained zaznamy je nutne jednou aktivne odstranit.
+        if object_id not in self.legacy_ts01_cleared:
+            self.remove_discovery("sensor", object_id + "_event")
+            self.publish(f"{root}/last_event", "")
+            self.legacy_ts01_cleared.add(object_id)
+
+    def _ts01_battery_saver(
+        self,
+        root: str,
+        object_id: str,
+        common: dict[str, Any],
+        enabled: bool,
+    ) -> None:
+        self.publish(f"{root}/battery_saver", "ON" if enabled else "OFF")
+        self.discovery(
+            "binary_sensor",
+            object_id + "_battery_saver",
+            {
+                **common,
+                "name": "Battery saver",
+                "state_topic": f"{root}/battery_saver",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "entity_category": "diagnostic",
+                "icon": "mdi:leaf",
+                "unique_id": object_id + "_battery_saver",
+            },
+        )
+
     def _pressure(
         self, root: str, object_id: str, common: dict[str, Any], hpa: float
     ) -> None:
@@ -1618,6 +1842,7 @@ class MqttBridge:
         for topic in topics:
             self.client.publish(topic, "", retain=True)
             self.announced.discard(topic)
+            self.removed.add(topic)
         for name in STATE_TOPICS:
             self.client.publish(f"{root}/{name}", "", retain=True)
 
@@ -1631,6 +1856,7 @@ class MqttBridge:
             topic = f"{self.discovery_prefix}/{component}/{object_id}{suffix}/config"
             self.client.publish(topic, "", retain=True)
             self.announced.discard(topic)
+            self.removed.add(topic)
         for name in BASE_STATE_TOPICS:
             self.client.publish(f"{root}/{name}", "", retain=True)
         print(f"MQTT odstraněna základna {base_key}", flush=True)
@@ -1673,6 +1899,24 @@ class MqttBridge:
 
         if not payload:
             return
+
+        # TS01 ma sedmipolovy state a teploty v setinach stupne. Musi se
+        # zpracovat pred obecnym parserem, ktery ctyrpolovy state deli deseti.
+        if type_code == "ts01" and sink == "state":
+            thermostat_state = ts01_state_from_payload(payload)
+            if thermostat_state is not None:
+                self._ts01_climate(root, object_id, common, thermostat_state)
+                return
+
+        # Stock runtime knihovna potvrzuje rezim uspory baterie samostatnym
+        # mreportem. Jine/nezname konfigurace zustanou v raw diagnostice.
+        if type_code == "ts01" and sink == "mreport":
+            battery_saver = ts01_battery_saver_from_payload(payload)
+            if battery_saver is not None:
+                self._ts01_battery_saver(
+                    root, object_id, common, battery_saver
+                )
+                return
 
         # Teplotu hlasi jen nektere uzly (um01) a pod stejnymi sinky, pod
         # jakymi jine posilaji text, takze rozhoduje az tvar hodnoty.
@@ -2245,7 +2489,12 @@ class Gateway:
         print(f"CONTROL FORGET {key} smazáno lokálně{note}", flush=True)
 
     def request_control_action(
-        self, action: str, device_type: str, device_id: str, base_key: str = ""
+        self,
+        action: str,
+        device_type: str,
+        device_id: str,
+        base_key: str = "",
+        command: str = "",
     ) -> None:
         """Zaradit pozadavek z MQTT do stejne fronty jako soubor s pozadavky."""
         if action == "forget":
@@ -2259,6 +2508,7 @@ class Gateway:
                 "action": action,
                 "device_type": device_type,
                 "device_id": device_id,
+                "command": command,
             }
             try:
                 normalized = normalize_control_request(item)

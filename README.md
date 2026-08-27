@@ -9,7 +9,8 @@ Runs either as a **Home Assistant add-on** or as a plain Python script.
 Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
 with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
 (button), `is01` (siren) and `um01` (universal sensor, including its
-two-step calibration - see below).
+two-step calibration - see below). Initial `ts01` thermostat support is ready
+for hardware validation.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -32,7 +33,8 @@ Home Assistant gateway.
 - The CRE rule engine is served from local files, so the Lua libraries running
   on the base can be modified.
 - Full Home Assistant integration through MQTT discovery: contacts, tilt,
-  position, calibration state, battery, motion, buttons, siren and alarm modes.
+  position, calibration state, battery, motion, buttons, siren, thermostat and
+  alarm modes.
 - Pairing, unpairing, node listing and forced (re)calibration.
 - Commands reach the base in about a second.
 
@@ -282,7 +284,11 @@ base station.
 | `ps02` | motion with a configurable off delay, battery |
 | `bn01` | device triggers and an `event` entity, battery |
 | `is01` | siren on/off, sound pattern selector |
+| `ts01` | climate control with current and target temperature, writable setpoint, status, battery and battery-saver diagnostics |
 | base | identifier, address, alarm state, alarm mode selector, pairing and node listing buttons |
+
+The decoded TS01 fields and the still-unidentified raw fields are documented in
+[`docs/TS01_PROTOCOL.md`](docs/TS01_PROTOCOL.md).
 
 ## Control channel
 
@@ -308,6 +314,7 @@ can also be appended to the file named by `control.request_file`:
 | `calibrate` / `cal_reset` | send `cal` / `recal` to a node |
 | `calibrate_step1` / `calibrate_step2` | send `cfgclose` / `cal2` to a `um01` node |
 | `endnode_command` | send the command in the request's `command` field to a node |
+| `thermostat_setpoint` | set a `ts01` target from `command` (5-30 °C) through the stock retry path |
 | `siren_on` / `siren_off` | sound the siren |
 | `pattern_*` | play a sound pattern |
 | `mode_home`, `mode_away`, `mode_night`, `mode_custom` | switch the alarm mode |

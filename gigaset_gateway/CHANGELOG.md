@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.60
+
+- Add initial `ts01` thermostat support: Home Assistant MQTT Climate discovery,
+  current and target temperature, writable 5-30 °C setpoint in 0.5 °C steps,
+  thermostat status, battery diagnostics and confirmed battery-saver state.
+- Route target changes through the stock `ts01.set_setpoint()` function on the
+  base, preserving its priority manager and retry behavior for sleeping nodes.
+- Decode the seven-field TS01 state before the generic temperature parser,
+  retain still-unidentified fields as climate attributes, restore the entity on
+  MQTT replay, and clean every new retained topic on Unpair/Forget.
+- Remove the obsolete generic TS01 `Last event` entity when a valid thermostat
+  state is received.
+
 ## 1.0.59
 
 - Ship the `base_configuration.json` referenced by the standalone example, so

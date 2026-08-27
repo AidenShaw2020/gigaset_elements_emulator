@@ -6,7 +6,8 @@ its original firmware and simply talks to this add-on instead of
 
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
 (door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes, as well as
-the `um01` universal sensor.
+the `um01` universal sensor. Initial `ts01` thermostat support is included and
+ready for validation on a paired thermostat.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -157,6 +158,8 @@ Every paired node appears through MQTT discovery, grouped under the base:
 - motion: motion sensor with a configurable off delay
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
+- thermostat: climate entity with current and target temperature, writable
+  setpoint, status, battery and battery-saver diagnostics
 - base: identifier, address, alarm state and an alarm mode selector
 - buttons for pairing, unpairing, forgetting, listing nodes and (re)calibration
 
@@ -195,6 +198,12 @@ can also be appended to `/share/gigaset/control.json`:
 Each request runs once; the id is remembered. `endnode_command` sends whatever
 is in `command` straight to the node, which is useful for trying out commands
 that have no button.
+
+For a thermostat, `thermostat_setpoint` accepts a decimal `command` from 5 to
+30 °C and requires `device_type: "ts01"` plus its device id. Home Assistant uses
+the same path automatically. The generated `gwctl` calls the stock
+`ts01.set_setpoint()` function, so the original priority and retry logic remains
+active instead of sending only a one-shot raw ULE command.
 
 `endnodes_cleanup` removes specific entries from a base's own
 `/mnt/data/db/endnodes` directly on the base - `command` is a
