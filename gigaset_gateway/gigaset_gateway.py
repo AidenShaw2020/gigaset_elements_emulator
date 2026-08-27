@@ -120,11 +120,13 @@ DISCOVERY_SUFFIXES = (
     ("sensor", "_hwver"),
     ("sensor", "_event"),
     ("sensor", "_thermostat_status"),
+    ("sensor", "_valve_position"),
     ("binary_sensor", "_contact"),
     ("binary_sensor", "_tilt"),
     ("binary_sensor", "_motion"),
     ("binary_sensor", "_siren"),
     ("binary_sensor", "_battery_saver"),
+    ("binary_sensor", "_mechanical_fault"),
     ("siren", "_siren"),
     ("select", "_pattern"),
     ("button", "_unpair"),
@@ -166,6 +168,8 @@ STATE_TOPICS = (
     "thermostat_state",
     "thermostat_status",
     "battery_saver",
+    "valve_position",
+    "mechanical_fault",
     "ver",
     "hwver",
     "last_event",
@@ -782,18 +786,23 @@ def ts01_state_from_payload(payload: str) -> dict[str, Any] | None:
     interni milli-Celsius reprezentaci, tedy obe hodnoty jsou setiny stupne.
     """
     parts = payload.split(";")
-    if len(parts) < 3 or not parts[0]:
+    if len(parts) < 3 or re.fullmatch(r"[a-z0-9_-]{1,32}", parts[0]) is None:
         return None
+    status = parts[0].lower()
     try:
         raw_temperature = int(parts[1])
         raw_setpoint = int(parts[2])
     except ValueError:
         return None
-    # Jen ochrana pred zjevne poskozenou zpravou; zaporne aktualni teploty jsou
-    # platne, ale cil mimo fyzicky rozsah TS01 nikoli.
+    # Pri instalaci po vlozeni baterii posila realny TS01 "inst;0;0". Nuly jsou
+    # v tomto stavu sentinel, ne 0 C / cil 0 C; posledni potvrzene MQTT hodnoty
+    # proto zustanou zachovane do nasledujiciho normalniho state.
     if not -5000 <= raw_temperature <= 10000:
         return None
-    if not 500 <= raw_setpoint <= 3000:
+    installation_sentinel = (
+        status == "inst" and raw_temperature == 0 and raw_setpoint == 0
+    )
+    if not installation_sentinel and not 500 <= raw_setpoint <= 3000:
         return None
     battery_values: list[int] | None = None
     if len(parts) >= 4:
@@ -806,16 +815,54 @@ def ts01_state_from_payload(payload: str) -> dict[str, Any] | None:
         # stabilni. Proto ho lze predat existujicimu battery parseru.
         if len(candidate) == 3 and all(1000 <= value <= 5000 for value in candidate):
             battery_values = candidate
+    valve_position_raw: int | None = None
+    if len(parts) >= 7:
+        try:
+            candidate_position = int(parts[-1])
+        except ValueError:
+            candidate_position = -1
+        if 0 <= candidate_position <= 255:
+            valve_position_raw = candidate_position
     return {
-        "status": parts[0],
-        "current_temperature": raw_temperature / 100,
-        "target_temperature": raw_setpoint / 100,
+        "status": status,
+        "current_temperature": None if installation_sentinel else raw_temperature / 100,
+        "target_temperature": None if installation_sentinel else raw_setpoint / 100,
         "raw_temperature": raw_temperature,
         "raw_setpoint": raw_setpoint,
         "battery_values_mv": battery_values,
+        # Silne odvozeno z realneho HW (0/71/157/255 pri pohybu motoru), nikoli
+        # ze stock Lua, ktere posledni pole vubec necte.
+        "valve_position_raw": valve_position_raw,
+        "valve_position_percent": (
+            round(valve_position_raw * 100 / 255)
+            if valve_position_raw is not None
+            else None
+        ),
+        "unknown_fields": parts[4:-1] if len(parts) >= 7 else parts[4:],
         "extra_fields": parts[3:],
         "raw": payload,
     }
+
+
+def ts01_setpoint_from_report(payload: str) -> float | None:
+    """Cilova teplota z autoritativniho TS01 report ACK, nebo None.
+
+    Zdroj je typicky ``rule`` nebo ``retry``. Jeho vyznam pro hodnotu neni
+    dulezity, ale musi byt jediny bezpecny token, aby parser neprijimal volny
+    text ani zkracene/predlzene varianty zpravy.
+    """
+    parts = payload.split(",")
+    if len(parts) != 3 or parts[0] != "setpoint":
+        return None
+    if re.fullmatch(r"[A-Za-z0-9._:-]{1,32}", parts[1]) is None:
+        return None
+    try:
+        raw_setpoint = int(parts[2])
+    except ValueError:
+        return None
+    if not 500 <= raw_setpoint <= 3000:
+        return None
+    return raw_setpoint / 100
 
 
 def ts01_battery_saver_from_payload(payload: str) -> bool | None:
@@ -1581,13 +1628,18 @@ class MqttBridge:
         state: dict[str, Any],
     ) -> None:
         """Vystavit potvrzeny stav TS01 jako MQTT climate a diagnostiku."""
-        current = float(state["current_temperature"])
-        target = float(state["target_temperature"])
         status = str(state["status"]).lower()
-        self.publish(f"{root}/temperature", f"{current:.2f}")
-        self.publish(f"{root}/setpoint", f"{target:.2f}")
+        current = state.get("current_temperature")
+        target = state.get("target_temperature")
+        if current is not None:
+            self.publish(f"{root}/temperature", f"{float(current):.2f}")
+        if target is not None:
+            self.publish(f"{root}/setpoint", f"{float(target):.2f}")
         self.publish(f"{root}/mode", "heat")
         self.publish(f"{root}/thermostat_status", status)
+        self.publish(
+            f"{root}/mechanical_fault", "ON" if status == "errmech" else "OFF"
+        )
         self.publish(
             f"{root}/thermostat_state",
             json.dumps(state, separators=(",", ":")),
@@ -1624,6 +1676,37 @@ class MqttBridge:
                 "unique_id": object_id + "_thermostat_status",
             },
         )
+        self.discovery(
+            "binary_sensor",
+            object_id + "_mechanical_fault",
+            {
+                **common,
+                "name": "Mechanical fault",
+                "state_topic": f"{root}/mechanical_fault",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "entity_category": "diagnostic",
+                "unique_id": object_id + "_mechanical_fault",
+            },
+        )
+        valve_position = state.get("valve_position_percent")
+        if valve_position is not None:
+            self.publish(f"{root}/valve_position", str(int(valve_position)))
+            self.discovery(
+                "sensor",
+                object_id + "_valve_position",
+                {
+                    **common,
+                    "name": "Valve position",
+                    "state_topic": f"{root}/valve_position",
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "icon": "mdi:valve",
+                    "unique_id": object_id + "_valve_position",
+                },
+            )
         battery_values = state.get("battery_values_mv")
         if isinstance(battery_values, list):
             self._battery(
@@ -1632,12 +1715,21 @@ class MqttBridge:
                 common,
                 ",".join(str(value) for value in battery_values),
             )
-        # Verze pred podporou TS01 vytvorila z celeho state diagnosticky
-        # "Last event". Oba retained zaznamy je nutne jednou aktivne odstranit.
+        self._clear_ts01_legacy_event(root, object_id)
+
+    def _clear_ts01_legacy_event(self, root: str, object_id: str) -> None:
+        """Jednou odstranit obecny Last event, ktery vytvarely starsi verze."""
         if object_id not in self.legacy_ts01_cleared:
             self.remove_discovery("sensor", object_id + "_event")
             self.publish(f"{root}/last_event", "")
             self.legacy_ts01_cleared.add(object_id)
+
+    def _ts01_setpoint_ack(
+        self, root: str, object_id: str, target: float
+    ) -> None:
+        """Promitnout termostatem potvrzeny setpoint bez cekani na heartbeat."""
+        self.publish(f"{root}/setpoint", f"{target:.2f}")
+        self._clear_ts01_legacy_event(root, object_id)
 
     def _ts01_battery_saver(
         self,
@@ -1899,6 +1991,15 @@ class MqttBridge:
 
         if not payload:
             return
+
+        # Stock TS01 povazuje report "setpoint,<zdroj>,<setiny C>" za uspesne
+        # potvrzeni a ukonci po nem retry. Je proto autoritativni a MQTT target
+        # se muze aktualizovat ihned, bez cekani az 900 s na dalsi state.
+        if type_code == "ts01" and sink == "report":
+            confirmed_setpoint = ts01_setpoint_from_report(payload)
+            if confirmed_setpoint is not None:
+                self._ts01_setpoint_ack(root, object_id, confirmed_setpoint)
+                return
 
         # TS01 ma sedmipolovy state a teploty v setinach stupne. Musi se
         # zpracovat pred obecnym parserem, ktery ctyrpolovy state deli deseti.

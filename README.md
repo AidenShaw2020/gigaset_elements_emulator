@@ -9,8 +9,7 @@ Runs either as a **Home Assistant add-on** or as a plain Python script.
 Verified on live hardware against firmware `bas-002.012.002` (Dialog SC14452)
 with sensor types `ws02` (window), `ds02` (door), `ps02` (motion), `bn01`
 (button), `is01` (siren) and `um01` (universal sensor, including its
-two-step calibration - see below). Initial `ts01` thermostat support is ready
-for hardware validation.
+two-step calibration - see below), plus `ts01` (thermostat).
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -284,7 +283,7 @@ base station.
 | `ps02` | motion with a configurable off delay, battery |
 | `bn01` | device triggers and an `event` entity, battery |
 | `is01` | siren on/off, sound pattern selector |
-| `ts01` | climate control with current and target temperature, writable setpoint, status, battery and battery-saver diagnostics |
+| `ts01` | climate control with current and target temperature, writable setpoint, status, battery, battery-saver, mechanical-fault and inferred valve-position diagnostics |
 | base | identifier, address, alarm state, alarm mode selector, pairing and node listing buttons |
 
 The decoded TS01 fields and the still-unidentified raw fields are documented in

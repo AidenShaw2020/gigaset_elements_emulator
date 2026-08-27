@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.61
+
+- Apply a confirmed TS01 `report=setpoint,<source>,<value>` immediately to the
+  retained MQTT target instead of waiting up to 15 minutes for the next state
+  heartbeat.
+- Treat `inst;0;0` after battery insertion as an installation state with
+  sentinel temperatures, preserving the last valid current and target values.
+- Expose `errmech` as a mechanical-problem diagnostic without making the
+  climate entity unavailable; clear the diagnostic on later non-error states.
+- Add an explicitly inferred valve-position diagnostic by mapping the final
+  TS01 state field from 0-255 to 0-100 percent.
+
 ## 1.0.60
 
 - Add initial `ts01` thermostat support: Home Assistant MQTT Climate discovery,

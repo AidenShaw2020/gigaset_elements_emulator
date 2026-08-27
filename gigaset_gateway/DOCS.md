@@ -6,8 +6,7 @@ its original firmware and simply talks to this add-on instead of
 
 Verified against firmware `bas-002.012.002` with `ws02` (window), `ds02`
 (door), `ps02` (motion), `bn01` (button) and `is01` (siren) nodes, as well as
-the `um01` universal sensor. Initial `ts01` thermostat support is included and
-ready for validation on a paired thermostat.
+the `um01` universal sensor and the `ts01` thermostat.
 
 > **Independent, unofficial project.** Not affiliated with, endorsed by or
 > supported by Gigaset. "Gigaset" and "Gigaset elements" are used only to
@@ -159,7 +158,8 @@ Every paired node appears through MQTT discovery, grouped under the base:
 - button: device triggers and an `event` entity
 - siren: on/off plus a sound pattern selector
 - thermostat: climate entity with current and target temperature, writable
-  setpoint, status, battery and battery-saver diagnostics
+  setpoint, status, battery, battery-saver, mechanical-fault and inferred
+  valve-position diagnostics
 - base: identifier, address, alarm state and an alarm mode selector
 - buttons for pairing, unpairing, forgetting, listing nodes and (re)calibration
 
