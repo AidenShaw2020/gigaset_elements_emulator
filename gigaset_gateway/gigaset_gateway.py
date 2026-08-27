@@ -1082,22 +1082,9 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
         if ENDNODE_ID_LIST_RE.fullmatch(command) is None:
             raise ValueError(f"Control request {request_id} has invalid endnode id list")
     elif action == "thermostat_setpoint":
-        if (
-            device_type != "ts01"
-            or THERMOSTAT_SETPOINT_RE.fullmatch(command) is None
-        ):
+        if device_type != "ts01":
             raise ValueError(f"Control request {request_id} has invalid thermostat setpoint")
-        try:
-            value = Decimal(command)
-        except InvalidOperation as exc:
-            raise ValueError(
-                f"Control request {request_id} has invalid thermostat setpoint"
-            ) from exc
-        if not TS01_MIN_TEMPERATURE <= value <= TS01_MAX_TEMPERATURE:
-            raise ValueError(
-                f"Control request {request_id} thermostat setpoint is out of range"
-            )
-        command = format(value.normalize(), "f")
+        command = normalize_ts01_setpoint(command)
     else:
         command = ""
     return {
@@ -1107,6 +1094,20 @@ def normalize_control_request(item: dict[str, Any]) -> dict[str, str]:
         "device_type": device_type,
         "command": command,
     }
+
+
+def normalize_ts01_setpoint(command: str) -> str:
+    """Bezpecne znormalizovat cil TS01 pro frontu i okamzity MQTT stav."""
+    command = str(command).strip().lower()
+    if THERMOSTAT_SETPOINT_RE.fullmatch(command) is None:
+        raise ValueError("Invalid thermostat setpoint")
+    try:
+        value = Decimal(command)
+    except InvalidOperation as exc:
+        raise ValueError("Invalid thermostat setpoint") from exc
+    if not TS01_MIN_TEMPERATURE <= value <= TS01_MAX_TEMPERATURE:
+        raise ValueError("Thermostat setpoint is out of range")
+    return format(value.normalize(), "f")
 
 
 class MqttBridge:
@@ -1215,12 +1216,27 @@ class MqttBridge:
                 and parts[1] == "ts01"
                 and parts[3:5] == ["setpoint", "set"]
             ):
-                value = message.payload.decode("utf-8", "replace").strip()
+                request = normalize_control_request(
+                    {
+                        "id": "mqtt-preview",
+                        "action": "thermostat_setpoint",
+                        "device_type": "ts01",
+                        "device_id": parts[2],
+                        "command": message.payload.decode("utf-8", "replace"),
+                    }
+                )
+                value = request["command"]
                 # Cilova zakladna se dohleda podle posledni udalosti tohoto TS01.
-                # Stav se zamerne nenastavuje optimisticky; climate ukaze az
-                # hodnotu, kterou termostat skutecne potvrdi v dalsim state.
                 self.command_handler(
-                    "thermostat_setpoint", "ts01", parts[2], "", value
+                    "thermostat_setpoint", "ts01", request["device_id"], "", value
+                )
+                # Uspany termostat muze potvrdit prikaz az za desitky sekund.
+                # Po uspesnem zarazeni do fronty proto climate ukaze pozadovany
+                # cil hned. Autoritativni report/state ho pozdeji potvrdi nebo
+                # prepise skutecnou hodnotou.
+                self.publish(
+                    f"{self.base_topic}/ts01/{request['device_id']}/setpoint",
+                    f"{Decimal(value):.2f}",
                 )
             elif len(parts) == 4 and parts[3] == "command":
                 action = message.payload.decode("utf-8", "replace").strip()

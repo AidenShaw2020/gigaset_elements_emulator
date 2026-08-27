@@ -36,6 +36,11 @@ steps.
 
 ## Setpoint acknowledgement
 
+When Home Assistant requests a new target, the gateway validates and queues the
+command and immediately retains the requested value on the MQTT setpoint topic.
+This is the pending desired state: a sleeping thermostat can take more than a
+minute to wake and reply.
+
 After accepting a target, the stock TS01 rule reports:
 
 ```text
@@ -45,8 +50,9 @@ setpoint,rule,2500
 The final value is the confirmed target in hundredths of a degree Celsius. The
 gateway accepts only exactly three fields, a safe source token and a value from
 `500` through `3000`, then immediately retains `25.00` on the MQTT setpoint
-topic. This avoids waiting for the thermostat's state heartbeat, which can take
-about 15 minutes.
+topic again as the authoritative confirmation. A later `state` can also correct
+the target. This avoids both the wake-up delay before the report and the state
+heartbeat delay, which can take about 15 minutes.
 
 ## Valve-position confidence
 

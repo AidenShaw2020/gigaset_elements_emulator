@@ -171,6 +171,29 @@ class Ts01ControlTests(unittest.TestCase):
             calls,
             [("thermostat_setpoint", "ts01", "0387a36430", "", "22.5")],
         )
+        self.assertIn(
+            ("gigaset/ts01/0387a36430/setpoint", "22.50", True),
+            mqtt.client.published,
+        )
+
+    def test_mqtt_setpoint_is_not_persisted_when_queue_rejects_it(self) -> None:
+        def reject(*_args) -> None:
+            raise RuntimeError("queue unavailable")
+
+        mqtt = bridge(reject)
+        mqtt._on_message(
+            None,
+            None,
+            SimpleNamespace(
+                topic="gigaset/ts01/0387a36430/setpoint/set",
+                payload=b"23",
+                retain=False,
+            ),
+        )
+        self.assertNotIn(
+            "gigaset/ts01/0387a36430/setpoint",
+            {topic for topic, _payload, _retain in mqtt.client.published},
+        )
 
     def test_setpoint_routes_to_base_that_last_reported_thermostat(self) -> None:
         instance = gateway.Gateway.__new__(gateway.Gateway)

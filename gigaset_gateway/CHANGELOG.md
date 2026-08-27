@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.62
+
+- Retain a validated TS01 target in MQTT immediately after its Home Assistant
+  command is successfully queued. Sleeping thermostats can take more than a
+  minute to send their acknowledgement; the later authoritative `report` or
+  `state` still confirms or corrects the displayed target.
+
 ## 1.0.61
 
 - Apply a confirmed TS01 `report=setpoint,<source>,<value>` immediately to the
